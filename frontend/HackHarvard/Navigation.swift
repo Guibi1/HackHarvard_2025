@@ -50,7 +50,7 @@ enum NavigationOptions: Equatable, Hashable, Identifiable {
         switch self {
         case .files: FilesView()
         case .upload: UploadView()
-        case .settings: SettingsView()
+        case .settings: ContentView()
         }
 
     }

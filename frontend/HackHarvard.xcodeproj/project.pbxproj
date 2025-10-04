@@ -10,22 +10,9 @@
 		A460D5D32E90843A00E84850 /* HackHarvard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HackHarvard.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		A48636322E90B295000D44EF /* Exceptions for "HackHarvard" folder in "HackHarvard" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Model/Untitled.swift,
-			);
-			target = A460D5D22E90843A00E84850 /* HackHarvard */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A460D5D52E90843A00E84850 /* HackHarvard */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				A48636322E90B295000D44EF /* Exceptions for "HackHarvard" folder in "HackHarvard" target */,
-			);
 			path = HackHarvard;
 			sourceTree = "<group>";
 		};
@@ -259,11 +246,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-<<<<<<< HEAD
-				DEVELOPMENT_TEAM = XURVSWDX4Y;
-=======
 				DEVELOPMENT_TEAM = N5YK64FC36;
->>>>>>> 1f03617 (Basic app)
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = NO;
@@ -317,11 +300,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-<<<<<<< HEAD
-				DEVELOPMENT_TEAM = XURVSWDX4Y;
-=======
 				DEVELOPMENT_TEAM = N5YK64FC36;
->>>>>>> 1f03617 (Basic app)
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = NO;

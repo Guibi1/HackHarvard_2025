@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
+	"encoding/json"
 	"github.com/gin-gonic/gin"
 )
 
@@ -21,6 +21,10 @@ var (
 	}
 )
 var uploadDir = "./uploads"
+
+type FileMetadata struct {
+    fileName      string
+}
 
 func main() {
 	// Create uploads folder if not exists
@@ -54,10 +58,19 @@ func main() {
 			return
 		}
 
-		// Parse uploaded file
-		file, err := c.FormFile("file")
+		// Get session ID from form
+		metadata_string := c.PostForm("metadata")
+		var metadata FileMetadata
+		err := json.Unmarshal([]byte(metadata_string), &metadata)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Parse uploaded file
+		file := c.PostForm("file")
+		if file == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "file is required"})
 			return
 		}
 
@@ -69,15 +82,18 @@ func main() {
 		}
 
 		// Save file inside the session folder with its original name
-		savePath := filepath.Join(sessionDir, file.Filename)
-		if err := c.SaveUploadedFile(file, savePath); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		savePath := filepath.Join(sessionDir, metadata.fileName)
+		f, err := os.Create("output.txt")
+		if err != nil {
+   			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		defer f.Close()
+		f.WriteString(file)
 
 		c.JSON(http.StatusOK, gin.H{
 			"session_id": sessionID,
-			"filename":   file.Filename,
+			"filename":   metadata.fileName,
 			"path":       savePath,
 		})
 	})
