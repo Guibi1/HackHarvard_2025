@@ -1,20 +1,23 @@
-//
-//  HackHarvardApp.swift
-//  HackHarvard
-//
-//  Created by Laurent Stéphenne on 2025-10-03.
-//
-
 import SwiftUI
 
 @main
 struct HackHarvardApp: App {
+    @State private var modelData = ModelData()
+    @State private var preferredColumn: NavigationSplitViewColumn = .detail
+
     var body: some Scene {
         WindowGroup {
-            
-                ContentView()
-           
+            TabView {
+                ForEach(NavigationOptions.mainPages) { page in
+                    Tab(page.name, systemImage: page.symbolName) {
+                        page.viewForPage()
+                            .environment(modelData)
+                    }
+                }
+            }.fullScreenCover(isPresented: $modelData.isConnection) {
+                ConnectingView()
+                    .environment(modelData)
+            }
         }
     }
 }
-
