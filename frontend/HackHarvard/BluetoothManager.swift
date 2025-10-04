@@ -19,12 +19,16 @@ struct DiscoveredDevice: Identifiable {
     let connectable: Bool
 }
 
-class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate {
+class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private var centralManager: CBCentralManager?
     @Published var devices: [DiscoveredDevice] = []
     @Published var isScanning: Bool = false
     @Published var connectedPeripheral: CBPeripheral?
-
+    private var shouldAutoReconnect: Bool = true
+    
+    // 🔑 Cache characteristics by UUID so we can write later
+    private var characteristics: [CBUUID: CBCharacteristic] = [:]
+    
     override init() {
         super.init()
         centralManager = CBCentralManager(delegate: self, queue: nil)
@@ -56,11 +60,11 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate {
             return
         }
         devices.removeAll()
-        central.scanForPeripherals(withServices: nil, options: nil)
+        central.scanForPeripherals(withServices: [CBUUID(string: "E20A39F4-73F5-4BC4-A12F-17D1AD07A961")], options: nil)
         print("Started scanning...")
 
-        // Stop after 10s
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+        // Stop after 30s
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
             self?.stopScan()
         }
     }
@@ -69,46 +73,34 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate {
         centralManager?.stopScan()
         print("Stopped scanning.")
     }
-
-
+    
     func centralManager(_ central: CBCentralManager,
                         didDiscover peripheral: CBPeripheral,
                         advertisementData: [String : Any],
                         rssi RSSI: NSNumber) {
         
         guard let manufacturerData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data else {
-            return // Ignore if no manufacturer data
+            return
         }
         
         let bytes = [UInt8](manufacturerData)
         guard bytes.count >= 6 else { return }
         
-        // Match manufacturer prefix
-        /*guard (bytes[2] == 0xDE && bytes[3] == 0xAD &&
-               bytes[4] == 0xCA && bytes[5] == 0xCA) else {
-            return
-        }*/
-        
         let advertisedName = advertisementData[CBAdvertisementDataLocalNameKey] as? String
         let deviceName = advertisedName ?? peripheral.name ?? "Unknown"
         let connectable = (advertisementData[CBAdvertisementDataIsConnectable] as? Bool) ?? false
         
-        // Check if already discovered
         if let index = devices.firstIndex(where: { $0.identifier == peripheral.identifier }) {
-            // Update existing device if name changed
-            if devices[index].name != deviceName {
-                devices[index] = DiscoveredDevice(
-                    name: deviceName,
-                    peripheral: peripheral,
-                    identifier: peripheral.identifier,
-                    rssi: RSSI,
-                    advertisementData: advertisementData,
-                    connectable: connectable
-                )
-                print("♻️ Updated device name → \(deviceName)")
-            }
+            devices[index] = DiscoveredDevice(
+                name: deviceName,
+                peripheral: peripheral,
+                identifier: peripheral.identifier,
+                rssi: RSSI,
+                advertisementData: advertisementData,
+                connectable: connectable
+            )
+            print("♻️ Updated device: \(deviceName)")
         } else {
-            // New device
             let device = DiscoveredDevice(
                 name: deviceName,
                 peripheral: peripheral,
@@ -128,20 +120,21 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate {
         }
     }
     
-    // connect to device
+    // MARK: - Connection + Callbacks
     func connect(device: DiscoveredDevice) {
         connectedPeripheral = device.peripheral
+        connectedPeripheral?.delegate = self
+        shouldAutoReconnect = true
         centralManager?.connect(device.peripheral, options: nil)
         print("🔗 Connecting to \(device.name)...")
     }
     
-    // Callback for didConnect
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         print("✅ Connected to \(peripheral.name ?? "Unknown")")
+        characteristics.removeAll()
         peripheral.discoverServices(nil)
     }
     
-    // Callback for didDiscoverServices
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         if let error = error {
             print("Error discovering services: \(error.localizedDescription)")
@@ -151,27 +144,83 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate {
         guard let services = peripheral.services else { return }
         for service in services {
             print("📡 Service found: \(service.uuid)")
-            // Discover characteristics of each service
             peripheral.discoverCharacteristics(nil, for: service)
         }
     }
     
-    // Callback didDiscoverCharacteristicsFor
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         if let error = error {
             print("Error discovering characteristics: \(error.localizedDescription)")
             return
         }
         
-        guard let characteristics = service.characteristics else { return }
-        for characteristic in characteristics {
+        guard let chars = service.characteristics else { return }
+        for characteristic in chars {
             print("🔑 Characteristic: \(characteristic.uuid), properties: \(characteristic.properties)")
+            
+            // cache for write/read later
+            characteristics[characteristic.uuid] = characteristic
             
             if characteristic.properties.contains(.read) {
                 peripheral.readValue(for: characteristic)
             }
-            
         }
     }
+    
+    func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        if let error = error {
+            print("❌ Error updating value for \(characteristic.uuid): \(error.localizedDescription)")
+            return
+        }
         
+        guard let value = characteristic.value else {
+            print("⚠️ No value for \(characteristic.uuid)")
+            return
+        }
+        
+        let hexString = value.map { String(format: "%02hhx", $0) }.joined(separator: " ")
+        print("📥 Value for \(characteristic.uuid): \(hexString)")
+        
+        if characteristic.uuid == CBUUID(string: "2A19"), let battery = value.first {
+            print("🔋 Battery Level: \(battery)%")
+        }
+    }
+    
+    // MARK: - Disconnect/Reconnect
+    func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        print("⚠️ Disconnected from \(peripheral.name ?? "Unknown")")
+        if shouldAutoReconnect, connectedPeripheral?.identifier == peripheral.identifier {
+            print("🔄 Attempting to reconnect...")
+            central.connect(peripheral, options: nil)
+        } else {
+            connectedPeripheral = nil
+        }
+    }
+    
+    func disconnect() {
+        if let peripheral = connectedPeripheral {
+            shouldAutoReconnect = false
+            centralManager?.cancelPeripheralConnection(peripheral)
+            print("🔌 Disconnecting from \(peripheral.name ?? "Unknown")...")
+        }
+    }
+    
+    // MARK: - Writing
+    func write(to characteristicUUID: CBUUID, value: Data, type: CBCharacteristicWriteType = .withResponse) {
+        guard let peripheral = connectedPeripheral, peripheral.state == .connected else {
+            print("⚠️ Cannot write: peripheral not fully connected")
+            return
+        }
+        guard let characteristic = characteristics[characteristicUUID] else {
+            print("⚠️ Characteristic \(characteristicUUID) not found yet")
+            return
+        }
+        peripheral.writeValue(value, for: characteristic, type: type)
+        print("✍️ Wrote \(value.count) bytes to \(characteristicUUID)")
+    }
+    
+    // Helper
+    func isDeviceConnected(_ device: DiscoveredDevice) -> Bool {
+        return connectedPeripheral?.identifier == device.identifier
+    }
 }

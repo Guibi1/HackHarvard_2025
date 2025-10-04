@@ -6,47 +6,71 @@
 //
 
 import SwiftUI
-
+import CoreBluetooth
+enum BluetoothRole {
+    case central
+    case peripheral
+}
 
 struct ContentView: View {
+    @State private var role: BluetoothRole? = nil
     @StateObject private var bluetoothVM = BluetoothManager()
-
+    @State private var peripheralManager: PeripheralManager? = nil
+    
     var body: some View {
         VStack {
             HStack {
-                Button("Scan for 10s") {
-                    bluetoothVM.scanForDevices()
+                Button("Act as Central") {
+                    role = .central
+                    peripheralManager = nil
                 }
-                Button("Stop Now") {
-                    bluetoothVM.stopScan()
+                Button("Act as Peripheral") {
+                    role = .peripheral
+                    peripheralManager = PeripheralManager()
                 }
             }
-            List(bluetoothVM.devices, id: \.identifier) { device in
-                VStack(alignment: .leading) {
-                    Text("Name: \(device.name)")
-                        .font(.headline)
-                    Text("UUID: \(device.identifier.uuidString)")
-                    Text("RSSI: \(device.rssi)")
-                    Text("Advertisement: \(device.advertisementData.description)")
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                        .lineLimit(5)
+            
+            if role == .central {
+                VStack {
+                    Button("Scan for 30s") {
+                        bluetoothVM.scanForDevices()
+                    }
+                    Button("Stop Now") {
+                        bluetoothVM.stopScan()
+                    }
                     
-                    if device.connectable {
-                        Spacer().frame(height: 8)
-                        Button("Connect") {
-                            print("Connect tapped for \(device.name)")
-                            bluetoothVM.connect(device: device)
+                    List(bluetoothVM.devices, id: \.identifier) { device in
+                        VStack(alignment: .leading) {
+                            Text("Name: \(device.name)")
+                            Text("UUID: \(device.identifier.uuidString)")
+                            Text("RSSI: \(device.rssi)")
+                            
+                            if device.connectable {
+                                if bluetoothVM.connectedPeripheral?.identifier == device.identifier {
+                                    HStack {
+                                        Button("Disconnect") {
+                                            bluetoothVM.disconnect()
+                                        }
+                                        .foregroundColor(.red)
+                                        Button("Write!") {
+                                            let data = "hello".data(using: .utf8)!
+                                            bluetoothVM.write(to: CBUUID(string: "5678"), value: data)
+                                        }
+                                    }
+                                } else {
+                                    Button("Connect") {
+                                        bluetoothVM.connect(device: device)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-                .padding(.vertical, 4)
+            }
+            
+            if role == .peripheral {
+                Text("📡 Advertising as Peripheral…")
             }
         }
-        .padding()
     }
-}
-
-#Preview {
-    ContentView()
 }
