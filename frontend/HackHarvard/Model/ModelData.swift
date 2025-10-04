@@ -11,10 +11,66 @@ class ModelData {
         AvailableFile(id: "1", name: "Nuclear warhead.pdf", isDownloaded: true, pdfData: ModelData.createSamplePDFData()),
         AvailableFile(id: "2", name: "Launch codes.pdf", isDownloaded: false),
     ]
-
     init() {
-        //        FETCH DATA
+        Task { [weak self] in
+            guard let self = self else { return }
+            let networkManager = NetworkManager()
+            
+            do {
+                let fileData = try await networkManager.downloadFile(
+                    from: "http://169.254.57.175:8080/download/ocean/output.txt"
+                )
+                
+                guard var base64String = String(data: fileData, encoding: .utf8) else {
+                    throw EncryptionError.invalidBase64String
+                }
+                
+                base64String = base64String
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .replacingOccurrences(of: "%", with: "")
+                
+                let encryptedData = try EncryptionManager.decodeFromBase64(base64String)
+                print("✅ Base64 decoded (\(encryptedData.count) bytes of encrypted data)")
+                
+                guard let stored = KeychainManager.shared.loadEncryptionKeyAndIV() else {
+                    throw EncryptionError.keyGenerationFailed
+                }
+                
+                print("🔑 Loaded key bytes: \(stored.key.count) | IV bytes: \(stored.iv.count)")
+                
+                let decryptedData = try EncryptionManager.decryptData(
+                    encryptedData,
+                    key: stored.key,
+                    iv: stored.iv
+                )
+                print("✅ Decryption successful (\(decryptedData.count) bytes)")
+                
+                let pdfURL = try Self.savePDFDataToDocuments(decryptedData, fileName: "output.pdf")
+                print("💾 Saved decrypted PDF to: \(pdfURL.path)")
+                
+                await MainActor.run {
+                    let newFile = AvailableFile(
+                        id: UUID().uuidString,
+                        name: "output.pdf",
+                        isDownloaded: true,
+                        pdfData: decryptedData
+                    )
+                    self.files.append(newFile)
+                }
+                
+            } catch {
+                print("❌ Error decrypting or saving PDF: \(error.localizedDescription)")
+            }
+        }
     }
+    // MARK: - Save Decrypted File
+    static func savePDFDataToDocuments(_ data: Data, fileName: String) throws -> URL {
+        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let fileURL = documentsURL.appendingPathComponent(fileName)
+        try data.write(to: fileURL)
+        return fileURL
+    }
+    
 
     static func createSamplePDFData() -> Data {
         let pdfContent = """

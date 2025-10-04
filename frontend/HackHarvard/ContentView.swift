@@ -7,6 +7,7 @@
 
 import SwiftUI
 import CoreBluetooth
+
 enum BluetoothRole {
     case central
     case peripheral
@@ -15,16 +16,18 @@ enum BluetoothRole {
 struct ContentView: View {
     @State private var role: BluetoothRole? = nil
     @StateObject private var bluetoothVM = BluetoothManager()
+    @State private var showingInputDialog = false
+    @State private var inputText: String = ""
     @State private var peripheralManager: PeripheralManager? = nil
+
     
     var body: some View {
         VStack {
             HStack {
-                Button("Act as Central") {
+                Button("I want to share") {
                     role = .central
-                    peripheralManager = nil
                 }
-                Button("Act as Peripheral") {
+                Button("I want to receive"){
                     role = .peripheral
                     peripheralManager = PeripheralManager()
                 }
@@ -48,13 +51,27 @@ struct ContentView: View {
                             if device.connectable {
                                 if bluetoothVM.connectedPeripheral?.identifier == device.identifier {
                                     HStack {
-                                        Button("Disconnect") {
-                                            bluetoothVM.disconnect()
-                                        }
-                                        .foregroundColor(.red)
-                                        Button("Write!") {
-                                            let data = "hello".data(using: .utf8)!
-                                            bluetoothVM.write(to: CBUUID(string: "5678"), value: data)
+                                        if !showingInputDialog {
+                                            Button("Write to him!") {
+                                                showingInputDialog.toggle()
+                                            }
+                                        } else {
+                                            Button("Are you sure!") {
+                                                if let (key, iv) = KeychainManager.shared.loadEncryptionKeyAndIV() {
+                                                    // Combine and split into 20-byte BLE chunks
+                                                    let chunks = KeychainManager.shared.sendEncryptionDataOverBluetooth(key: key, iv: iv)
+                                                    
+                                                    // Send each chunk via BLE
+                                                    for chunk in chunks {
+                                                        bluetoothVM.write(
+                                                            to: CBUUID(string: "08590F7E-DB05-467E-8757-72F6FAEB13D5"),
+                                                            value: chunk
+                                                        )
+                                                    }
+                                                    bluetoothVM.write(to: CBUUID(string: "08590F7E-DB05-467E-8757-72F6FAEB13D5"), value: "EOF".data(using: .utf8)!)
+                                                }
+                                            }
+                                            .foregroundColor(.red)
                                         }
                                     }
                                 } else {

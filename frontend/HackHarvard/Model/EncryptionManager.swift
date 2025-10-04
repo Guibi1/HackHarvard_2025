@@ -24,7 +24,7 @@ class EncryptionManager {
         // Extract key and nonce as Data
         let keyData = key.withUnsafeBytes { Data($0) }
         let ivData = Data(nonce)
-
+        KeychainManager.shared.saveEncryptionKey(keyData, iv: ivData)
         return (encryptedData, keyData, ivData)
     }
 

@@ -82,8 +82,8 @@ func main() {
 		}
 
 		// Save file inside the session folder with its original name
-		savePath := filepath.Join(sessionDir, metadata.fileName)
-		f, err := os.Create("output.txt")
+		savePath := filepath.Join(sessionDir, "output.txt")
+		f, err := os.Create(savePath)
 		if err != nil {
    			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -92,10 +92,11 @@ func main() {
 		f.WriteString(file)
 
 		c.JSON(http.StatusOK, gin.H{
-			"session_id": sessionID,
-			"filename":   metadata.fileName,
-			"path":       savePath,
-		})
+    			"success":      true,
+    			"message":      "File uploaded successfully",
+    			"file_id":      sessionID,
+    			"download_url": fmt.Sprintf("http://localhost:8080/files/%s", metadata.fileName),
+               })
 	})
 
 	// Download endpoint
