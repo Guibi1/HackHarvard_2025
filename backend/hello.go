@@ -1,13 +1,15 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
-	"encoding/json"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -20,15 +22,29 @@ var (
 		"pearl", "queen", "river", "stone", "tiger",
 		"unity", "vivid", "whale", "xenon", "young", "zebra",
 	}
-)
-var uploadDir = "./uploads"
 
+	uploadDir = "./uploads"
+
+	// logs store
+	logs     []string
+	logsLock sync.Mutex
+)
+
+// FileMetadata structure
 type FileMetadata struct {
-    Checksum  string  `json:"checksum"`
-    IV        string  `json:"iv"`
-    Timestamp float64 `json:"timestamp"`
-    FileName  string  `json:"fileName"`
-    FileSize  int     `json:"fileSize"`
+	Checksum  string  `json:"checksum"`
+	IV        string  `json:"iv"`
+	Timestamp float64 `json:"timestamp"`
+	FileName  string  `json:"fileName"`
+	FileSize  int     `json:"fileSize"`
+}
+
+func addLog(entry string) {
+	logsLock.Lock()
+	defer logsLock.Unlock()
+
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	logs = append(logs, fmt.Sprintf("[%s] %s", timestamp, entry))
 }
 
 func main() {
@@ -39,65 +55,62 @@ func main() {
 
 	r := gin.Default()
 
+	// ---- CREATE SESSION ----
 	r.POST("/create-session", func(c *gin.Context) {
-
 		rand.Seed(time.Now().UnixNano())
 		word := words[rand.Intn(len(words))]
 
-		fmt.Println("Random 5-letter word:", word)
+		dirName := filepath.Join(uploadDir, word)
+		if err := os.MkdirAll(dirName, 0755); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		addLog(fmt.Sprintf("Created session '%s'", word))
+
 		c.JSON(http.StatusOK, gin.H{
 			"session_id": word,
 		})
-
-		dirName := fmt.Sprintf("./uploads/%s", word)
-		err := os.Mkdir(dirName, 0755)
-		print(err)
 	})
 
-	// Upload endpoint
+	// ---- UPLOAD ----
 	r.POST("/upload", func(c *gin.Context) {
-		// Get session ID from form
 		sessionID := c.PostForm("session_id")
 		if sessionID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "session_id is required"})
 			return
 		}
 
-		// Get session ID from form
-		metadata_string := c.PostForm("metadata")
+		metadataString := c.PostForm("metadata")
 		var metadata FileMetadata
-		err := json.Unmarshal([]byte(metadata_string), &metadata)
+		err := json.Unmarshal([]byte(metadataString), &metadata)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
-		// Parse uploaded file
-		file := c.PostForm("file")
-		if file == "" {
+		fileData := c.PostForm("file")
+		if fileData == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "file is required"})
 			return
 		}
 
-		// Create a folder for this session if it doesn't exist
 		sessionDir := filepath.Join(uploadDir, sessionID)
 		if err := os.MkdirAll(sessionDir, 0755); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
-		// Generate a unique ID for the file
 		fileID := uuid.New().String()
-
-		// Save file inside the session folder with its fileID
 		savePath := filepath.Join(sessionDir, fileID)
 		f, err := os.Create(savePath)
 		if err != nil {
-   			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 		defer f.Close()
-		f.WriteString(file)
+
+		f.WriteString(fileData)
 
 		metaPath := filepath.Join(sessionDir, "meta.txt")
 		mf, err := os.OpenFile(metaPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
@@ -106,34 +119,35 @@ func main() {
 			return
 		}
 		defer mf.Close()
-		mf.WriteString(fmt.Sprintf("%s: %s\n", fileID, metadata_string))
+		mf.WriteString(fmt.Sprintf("%s: %s\n", fileID, metadataString))
+
+		addLog(fmt.Sprintf("Session '%s' uploaded file '%s' (%s, %d bytes)", sessionID, metadata.FileName, metadata.Checksum, metadata.FileSize))
 
 		c.JSON(http.StatusOK, gin.H{
- 			"success":      true,
- 			"message":      "File uploaded successfully",
- 			"file_id":      fileID,
- 			"download_url": fmt.Sprintf("http://localhost:8080/download/%s/%s", sessionID, sessionID),
-        })
+			"success":      true,
+			"message":      "File uploaded successfully",
+			"file_id":      fileID,
+			"download_url": fmt.Sprintf("http://localhost:8000/download/%s/%s", sessionID, fileID),
+		})
 	})
 
-	// Download endpoint
+	// ---- DOWNLOAD ----
 	r.GET("/download/:session_id/:filename", func(c *gin.Context) {
 		sessionID := c.Param("session_id")
 		filename := c.Param("filename")
 
-		// Construct the full path to the file
 		filePath := filepath.Join(uploadDir, sessionID, filename)
-
-		// Check if the file exists
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
 			return
 		}
 
-		// Send the file as an attachment
+		addLog(fmt.Sprintf("Session '%s' downloaded file '%s'", sessionID, filename))
+
 		c.FileAttachment(filePath, filename)
 	})
 
+	// ---- GET ALL META ----
 	r.GET("/get-all/:session_id", func(c *gin.Context) {
 		sessionID := c.Param("session_id")
 		sessionDir := filepath.Join(uploadDir, sessionID)
@@ -145,11 +159,19 @@ func main() {
 			return
 		}
 
-		fmt.Println(string(content))
+		addLog(fmt.Sprintf("Session '%s' requested metadata listing", sessionID))
 		c.String(http.StatusOK, string(content))
 	})
 
-	// Start server
+	// ---- LOGS ENDPOINT ----
+	r.GET("/logs", func(c *gin.Context) {
+		logsLock.Lock()
+		defer logsLock.Unlock()
+
+		c.JSON(http.StatusOK, logs)
+	})
+
+	// ---- START SERVER ----
 	fmt.Println("Server running on http://localhost:8000")
 	r.Run(":8000")
 }
