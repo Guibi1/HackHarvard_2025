@@ -1,7 +1,7 @@
 import Combine
 import CoreBluetooth
-import SwiftUI
 import CryptoKit
+import SwiftUI
 
 // A model to hold discovered device info
 struct DiscoveredDevice: Identifiable {
@@ -26,7 +26,7 @@ class BluetoothClientManager: NSObject, ObservableObject,
     var onConnection: (() -> Void)?
 
     private var shouldAutoReconnect: Bool = true
-    private var characteristics: [CBUUID: CBCharacteristic] = [:]  // Cache for later read/write
+    private var authCharacteristic: CBCharacteristic? = nil
 
     override init() {
         super.init()
@@ -38,6 +38,7 @@ class BluetoothClientManager: NSObject, ObservableObject,
         switch central.state {
         case .poweredOn:
             print("✅ Bluetooth is On")
+            scanForDevices()
         case .poweredOff:
             print("⚠️ Bluetooth is Off")
         case .unauthorized:
@@ -73,9 +74,9 @@ class BluetoothClientManager: NSObject, ObservableObject,
         print("🔍 Started scanning...")
 
         // Stop after 30s
-        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
-            self?.stopScan()
-        }
+//        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+//            self?.stopScan()
+//        }
     }
 
     func stopScan() {
@@ -107,8 +108,8 @@ class BluetoothClientManager: NSObject, ObservableObject,
             connectable: connectable
         )
 
-        connect(device: device)
         stopScan()
+        connect(device: device)
 
         print("📡 Device: \(deviceName)")
         print("   UUID: \(peripheral.identifier)")
@@ -131,7 +132,7 @@ class BluetoothClientManager: NSObject, ObservableObject,
         didConnect peripheral: CBPeripheral
     ) {
         print("✅ Connected to \(peripheral.name ?? "Unknown")")
-        characteristics.removeAll()
+        authCharacteristic = nil
         peripheral.discoverServices(nil)
         stopScan()
     }
@@ -157,25 +158,17 @@ class BluetoothClientManager: NSObject, ObservableObject,
         didDiscoverCharacteristicsFor service: CBService,
         error: Error?
     ) {
-        if let error = error {
-            print(
-                "❌ Error discovering characteristics: \(error.localizedDescription)"
-            )
-            return
-        }
-
         guard let chars = service.characteristics else { return }
+
         for characteristic in chars {
-            print(
-                "🔑 Characteristic: \(characteristic.uuid), properties: \(characteristic.properties)"
-            )
+            print("Caracteristic found: \(characteristic.uuid)")
 
-            // Cache for later use
-            characteristics[characteristic.uuid] = characteristic
-
-            // Try reading only if explicitly readable
-            if characteristic.properties.contains(.read) {
-                peripheral.readValue(for: characteristic)
+            if characteristic.uuid
+                == CBUUID(string: "08590F7E-DB05-467E-8757-72F6FAEB13D5")
+            {
+                authCharacteristic = characteristic
+                peripheral.setNotifyValue(true, for: characteristic)
+                print("Ready to exchange key!")
             }
         }
     }
@@ -185,27 +178,22 @@ class BluetoothClientManager: NSObject, ObservableObject,
         didUpdateValueFor characteristic: CBCharacteristic,
         error: Error?
     ) {
-        if let error = error {
-            return
-        }
-
-        guard let value = characteristic.value else {
-            return
-        }
+        guard error == nil else { return }
+        guard let value = characteristic.value else { return }
 
         if characteristic.uuid
             == CBUUID(string: "08590F7E-DB05-467E-8757-72F6FAEB13D5")
         {
             let keyLength = 32
+            guard value.count >= keyLength else {
+                if value.count == 0 {
+                    sessionID = nil
+                }
+                return
+            }
 
             let decryptionKeyData = value.subdata(in: 0..<keyLength)
-            let sessionIDdata = value.subdata(
-                in: keyLength..<value.count
-            )
-
             decryptionKey = SymmetricKey(data: decryptionKeyData)
-            sessionID = String(data: sessionIDdata, encoding: .utf8)
-            
             self.onConnection?()
         }
     }
@@ -225,41 +213,40 @@ class BluetoothClientManager: NSObject, ObservableObject,
             central.connect(peripheral, options: nil)
         } else {
             connectedPeripheral = nil
+            authCharacteristic = nil
+            sessionID = nil
         }
     }
 
     func disconnect() {
         if let peripheral = connectedPeripheral {
             shouldAutoReconnect = false
+            authCharacteristic = nil
+            sessionID = nil
+            decryptionKey = nil
+            device = nil
             centralManager?.cancelPeripheralConnection(peripheral)
             print("🔌 Disconnecting from \(peripheral.name ?? "Unknown")...")
         }
     }
 
-    // MARK: - Writing
-    func write(
-        to characteristicUUID: CBUUID,
-        value: Data,
-        type: CBCharacteristicWriteType = .withResponse
-    ) {
-        guard let peripheral = connectedPeripheral,
-            peripheral.state == .connected
-        else {
-            print("⚠️ Cannot write: peripheral not connected")
-            return
-        }
-
-        guard let characteristic = characteristics[characteristicUUID] else {
-            print("⚠️ Characteristic \(characteristicUUID) not found yet")
-            return
-        }
-
-        peripheral.writeValue(value, for: characteristic, type: type)
-        print("✍️ Wrote \(value.count) bytes to \(characteristicUUID)")
-    }
-
     // MARK: - Helpers
     func isDeviceConnected(_ device: DiscoveredDevice) -> Bool {
         return connectedPeripheral?.identifier == device.identifier
+    }
+
+    func startKeyExchange(sessionID: String) {
+        if let peripheral = connectedPeripheral,
+            let authStartCharacteristic = authCharacteristic
+        {
+            peripheral.writeValue(
+                sessionID.data(using: .utf8)!,
+                for: authStartCharacteristic,
+                type: .withResponse,
+            )
+
+            print("✍️ Wrote sessionID")
+            self.sessionID = sessionID
+        }
     }
 }

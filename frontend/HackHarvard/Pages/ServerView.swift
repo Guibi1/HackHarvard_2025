@@ -25,43 +25,79 @@ struct ServerView: View {
     }
 
     var body: some View {
-        NavigationView {
-            VStack(spacing: 20) {
-                headerSection
-
-                if selectedPDFURL != nil {
-                    selectedFileSection
-                } else {
-                    selectFileSection
-                }
-
-                Text(bluetoothManager.sessionID)
-
-                if uploadStatus != .idle {
-                    uploadProgressSection
-                }
-
-                uploadButton
-
-                Spacer()
-            }
-            .padding()
-            .navigationTitle("Share Document")
-            .fileImporter(
-                isPresented: $isShowingDocumentPicker,
-                allowedContentTypes: [.pdf],
-                allowsMultipleSelection: false
-            ) { result in
-                switch result {
-                case .success(let urls):
-                    if let url = urls.first {
-                        selectedPDFURL = url
-                        selectedPDFName = url.lastPathComponent
+        VStack(spacing: 20) {
+            HStack {
+                Button(action: {
+                    modelData.switchToBluetoothClient()
+                }) {
+                    HStack {
+                        Image(systemName: "chevron.left")
                     }
-                case .failure(let error):
-                    errorMessage = error.localizedDescription
-                    uploadStatus = .error
+                    .frame(width: 48, height: 48)
+                    .font(.system(size: 24))
+                    .foregroundColor(.blue)
+                    .glassEffect(.regular.interactive())
                 }
+                Spacer()
+            }.padding(.horizontal)
+
+            headerSection
+
+            if selectedPDFURL != nil {
+                selectedFileSection
+            } else {
+                selectFileSection
+            }
+
+            if uploadStatus != .idle {
+                uploadProgressSection
+            }
+
+            if let files = modelData.files {
+                Spacer()
+
+                Text("Files").font(.subheadline)
+                List(files) { file in
+                    HStack(alignment: .center, spacing: 4) {
+                        Image(systemName: "lock.document")
+                        Text(file.metadata.fileName)
+                    }
+                    .contentShape(Rectangle())
+                    .swipeActions {
+                        Button(action: {
+                            modelData.deleteFile(file: file)
+                        }) {
+                            Image(systemName: "trash")
+                        }
+                        .tint(.red)
+                    }
+                }
+            }
+
+            Spacer()
+
+            VStack(spacing: 16) {
+                Text("Room code: \(bluetoothManager.sessionID)").font(
+                    .system(size: 18)
+                )
+                uploadButton
+            }.padding(.horizontal)
+        }
+        .padding()
+        .fileImporter(
+            isPresented: $isShowingDocumentPicker,
+            allowedContentTypes: [.pdf],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first {
+                    selectedPDFURL = url
+                    selectedPDFName = url.lastPathComponent
+                }
+            case .failure(let error):
+                errorMessage = error.localizedDescription
+                uploadStatus = .error
             }
         }
     }
@@ -72,11 +108,11 @@ struct ServerView: View {
                 .font(.system(size: 60))
                 .foregroundColor(.blue)
 
-            Text("Secure Document Upload")
+            Text("TempLock")
                 .font(.title2)
                 .fontWeight(.bold)
 
-            Text("Select a PDF file to encrypt with AES256 and upload securely")
+            Text("Select a PDF file to encrypt with AES256 and share securely")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -103,13 +139,7 @@ struct ServerView: View {
                 .onTapGesture {
                     isShowingDocumentPicker = true
                 }
-
-            Button("Choose PDF File") {
-                isShowingDocumentPicker = true
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(isUploading)
-        }
+        }.padding(.vertical)
     }
 
     private var selectedFileSection: some View {
@@ -196,13 +226,12 @@ struct ServerView: View {
                         .scaleEffect(0.8)
                         .progressViewStyle(CircularProgressViewStyle())
                 }
-                Text(isUploading ? "Uploading..." : "Upload Encrypted File")
+                Text(isUploading ? "Uploading..." : "Share")
             }
             .frame(maxWidth: .infinity)
             .padding()
-            .background(canUpload ? Color.blue : Color.gray)
-            .foregroundColor(.white)
-            .cornerRadius(10)
+            .disabled(!canUpload)
+            .glassEffect(.regular.interactive())
         }
         .disabled(!canUpload)
     }
@@ -255,7 +284,7 @@ struct ServerView: View {
                     iv: iv
                 )
 
-               let _ =  try await networkManager.uploadEncryptedFile(
+                let result = try await networkManager.uploadEncryptedFile(
                     encryptedFileData,
                     sessionID: bluetoothManager.sessionID,
                     serverURL: modelData.serverURL
@@ -265,10 +294,22 @@ struct ServerView: View {
                     }
                 }
 
+                let newFile = AvailableFile(
+                    id: result.fileId,
+                    metadata: FileMetadata(
+                        fileName: selectedPDFName,
+                        fileSize: pdfData.count,
+                        timestamp: Date(),
+                        checksum: result.checksum,
+                        iv: "fake"
+                    ),
+                )
+
                 await MainActor.run {
                     uploadStatus = .success
                     uploadProgress = 1.0
                     isUploading = false
+                    modelData.addAvailableFile(newFile)
                 }
 
                 // Reset after 3 seconds

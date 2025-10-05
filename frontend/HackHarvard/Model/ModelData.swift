@@ -6,7 +6,7 @@ import SwiftUI
 @Observable
 class ModelData {
     var searchString: String = ""
-    var serverURL: URL = URL(string: "http://10.123.237.219:8000")!
+    var serverURL: URL = URL(string: "http://10.123.237.141:8000")!
     var backend: NetworkManager = NetworkManager()
     var bluetooth: BluetoothManager = .client(
         bluetoothManager: BluetoothClientManager()
@@ -20,72 +20,6 @@ class ModelData {
                 self?.fetchFiles()
             }
         }
-        //
-        //        Task { [weak self] in
-        //            guard let self = self else { return }
-        //            let networkManager = NetworkManager()
-        //
-        //            do {
-        //                let fileData = try await networkManager.downloadFile(
-        //                    from: "http://169.254.57.175:8080/download/ocean/output.txt"
-        //                )
-        //
-        //                guard var base64String = String(data: fileData, encoding: .utf8)
-        //                else {
-        //                    throw EncryptionError.invalidBase64String
-        //                }
-        //
-        //                base64String =
-        //                    base64String
-        //                    .trimmingCharacters(in: .whitespacesAndNewlines)
-        //                    .replacingOccurrences(of: "%", with: "")
-        //
-        //                let encryptedData = try EncryptionManager.decodeFromBase64(
-        //                    base64String
-        //                )
-        //                print(
-        //                    "✅ Base64 decoded (\(encryptedData.count) bytes of encrypted data)"
-        //                )
-        //
-        //                guard
-        //                    let stored = KeychainManager.shared.loadEncryptionKeyAndIV()
-        //                else {
-        //                    throw EncryptionError.keyGenerationFailed
-        //                }
-        //
-        //                print(
-        //                    "🔑 Loaded key bytes: \(stored.key.count) | IV bytes: \(stored.iv.count)"
-        //                )
-        //
-        //                let decryptedData = try EncryptionManager.decryptData(
-        //                    encryptedData,
-        //                    key: stored.key,
-        //                    iv: stored.iv
-        //                )
-        //                print("✅ Decryption successful (\(decryptedData.count) bytes)")
-        //
-        //                let pdfURL = try Self.savePDFDataToDocuments(
-        //                    decryptedData,
-        //                    fileName: "output.pdf"
-        //                )
-        //                print("💾 Saved decrypted PDF to: \(pdfURL.path)")
-        //
-        //                await MainActor.run {
-        //                    let newFile = AvailableFile(
-        //                        id: UUID().uuidString,
-        //                        name: "output.pdf",
-        //                        isDownloaded: true,
-        //                        pdfData: decryptedData
-        //                    )
-        //                    self.files.append(newFile)
-        //                }
-        //
-        //            } catch {
-        //                print(
-        //                    "❌ Error decrypting or saving PDF: \(error.localizedDescription)"
-        //                )
-        //            }
-        //        }
     }
 
     func fetchFiles() {
@@ -175,7 +109,41 @@ class ModelData {
         }
     }
 
-    func switchToServer() {
+    func deleteFile(file: AvailableFile) {
+        let sessionID =
+            switch self.bluetooth {
+            case .client(let bluetoothManager):
+                bluetoothManager.sessionID
+            case .server(let bluetoothManager):
+                bluetoothManager.sessionID
+            }
+
+        guard let sessionID = sessionID else { return }
+
+        Task { [self] in
+            let _ = try await self.backend.deleteFile(
+                fileId: file.id,
+                sessionID: sessionID,
+                serverURL: serverURL
+            )
+
+            files?.removeAll(where: { $0.id == file.id })
+        }
+    }
+
+    func switchToBluetoothClient() {
+        if case .client(_) = bluetooth { return }
+
+        let bluetoothManager = BluetoothClientManager()
+        bluetoothManager.onConnection = { [weak self] in
+            self?.fetchFiles()
+        }
+        bluetooth = .client(bluetoothManager: bluetoothManager)
+    }
+
+    func switchToBluetoothServer() {
+        if case .server(_) = bluetooth { return }
+
         Task { [weak self] in
             guard let self = self else { return }
             let sessionID = await self.backend.createSession(
@@ -188,6 +156,14 @@ class ModelData {
                     encryptionKey: EncryptionManager.generateEncryptionKey()
                 ),
             )
+        }
+    }
+
+    func addAvailableFile(_ file: AvailableFile) {
+        if files == nil {
+            files = [file]
+        } else {
+            files?.append(file)
         }
     }
 

@@ -1,21 +1,27 @@
 import CoreBluetooth
-import Foundation
 import CryptoKit
+import Foundation
 
 class BluetoothServerManager: NSObject, CBPeripheralManagerDelegate {
     var sessionID: String
     var encryptionKey: SymmetricKey
 
     private var peripheralManager: CBPeripheralManager!
-    private var transferCharacteristic: CBMutableCharacteristic!
 
     // Your UUIDs
-    private let serviceUUID = CBUUID(
+    private static let serviceUUID = CBUUID(
         string: "08590F7E-DB05-467E-8757-72F6FAEB13D4"
     )
-    private let characteristicUUID = CBUUID(
+    private static let characteristicUUID = CBUUID(
         string: "08590F7E-DB05-467E-8757-72F6FAEB13D5"
     )  // different last digit
+
+    private static let transferCharacteristic = CBMutableCharacteristic(
+        type: characteristicUUID,
+        properties: [.write, .notify],
+        value: nil,
+        permissions: [.writeEncryptionRequired]
+    )
 
     init(sessionID: String, encryptionKey: SymmetricKey) {
         self.sessionID = sessionID
@@ -34,25 +40,22 @@ class BluetoothServerManager: NSObject, CBPeripheralManagerDelegate {
     }
 
     private func setupService() {
-        transferCharacteristic = CBMutableCharacteristic(
-            type: characteristicUUID,
-            properties: [.read, .write],
-            value: nil,
-            permissions: [.readable, .writeable]
+        let service = CBMutableService(
+            type: BluetoothServerManager.serviceUUID,
+            primary: true
         )
-
-        let service = CBMutableService(type: serviceUUID, primary: true)
-        service.characteristics = [transferCharacteristic]
+        service.characteristics = [
+            BluetoothServerManager.transferCharacteristic
+        ]
 
         peripheralManager.add(service)
         peripheralManager.startAdvertising([
-            CBAdvertisementDataLocalNameKey: "iPhonePeripheral",
-            CBAdvertisementDataServiceUUIDsKey: [serviceUUID],
+            CBAdvertisementDataLocalNameKey: "TempLock sharing",
+            CBAdvertisementDataServiceUUIDsKey: [
+                BluetoothServerManager.serviceUUID
+            ],
         ])
-        print("📣 Advertising service \(serviceUUID.uuidString)")
     }
-
-    var receivedDataBuffer = Data()
 
     func peripheralManager(
         _ peripheral: CBPeripheralManager,
@@ -60,40 +63,28 @@ class BluetoothServerManager: NSObject, CBPeripheralManagerDelegate {
     ) {
         for request in requests {
             guard let value = request.value else { continue }
-            receivedDataBuffer.append(value)
-            peripheral.respond(to: request, withResult: .success)
+            let received = String(data: value, encoding: .utf8)
+            if received == sessionID {
+                peripheral.respond(to: request, withResult: .success)
+
+                let keyData = encryptionKey.withUnsafeBytes { Data($0) }
+                peripheral.updateValue(
+                    keyData,
+                    for: BluetoothServerManager.transferCharacteristic,
+                    onSubscribedCentrals: [request.central]
+                )
+            } else {
+                peripheral.respond(
+                    to: request,
+                    withResult: .insufficientAuthentication
+                )
+                peripheral.updateValue(
+                    Data(),
+                    for: BluetoothServerManager.transferCharacteristic,
+                    onSubscribedCentrals: [request.central]
+                )
+            }
         }
-
-        processReceivedEncryptionData()
-    }
-
-    func processReceivedEncryptionData() {
-        let keyLength = 32
-        let sessionIdLength = 5
-
-        guard receivedDataBuffer.count >= sessionIdLength + keyLength else {
-            return
-        }
-
-        let decryptionKey = receivedDataBuffer.subdata(in: 0..<sessionIdLength)
-        let sessionID = receivedDataBuffer.subdata(
-            in: sessionIdLength..<(sessionIdLength + keyLength)
-        )
-
-        print("✅ Received key: \(decryptionKey as NSData)")
-        print("✅ Received session: \(sessionID as NSData)")
-
-        receivedDataBuffer.removeSubrange(0...keyLength + sessionIdLength)
-    }
-
-    func peripheralManager(
-        _ peripheral: CBPeripheralManager,
-        didReceiveRead request: CBATTRequest
-    ) {
-        let key = encryptionKey.withUnsafeBytes { Data($0) }
-        request.value = key + sessionID.data(using: .utf8)!
-        peripheral.respond(to: request, withResult: .success)
-        print("📤 Sent read response with session and key: \(encryptionKey) + \(String(describing: sessionID.data(using: .utf8)))")
     }
 }
 

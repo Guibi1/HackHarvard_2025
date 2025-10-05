@@ -299,6 +299,34 @@ class NetworkManager: ObservableObject {
         return data
     }
 
+    func deleteFile(fileId: String, sessionID: String, serverURL: URL)
+        async throws -> Data
+    {
+        let url = URL(
+            string: "/file/\(sessionID)/\(fileId)",
+            relativeTo: serverURL
+        )!
+
+        guard networkStatus != .disconnected else {
+            throw NetworkError.noNetworkConnection
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+
+        let (data, response) = try await URLSession.shared.data(
+            for: request,
+        )
+
+        guard let httpResponse = response as? HTTPURLResponse,
+            200...299 ~= httpResponse.statusCode
+        else {
+            throw NetworkError.downloadFailed
+        }
+
+        return data
+    }
+
     func listFiles(sessionID: String, serverURL: URL) async throws -> [(
         String, FileMetadata
     )] {
@@ -414,14 +442,16 @@ struct FileMetadata: Codable {
 struct UploadResponse: Codable {
     let success: Bool
     let message: String
-    let fileId: String?
-    let downloadUrl: String?
+    let fileId: String
+    let checksum: String
+    let downloadUrl: String
 
     enum CodingKeys: String, CodingKey {
         case success
         case message
         case fileId = "file_id"
         case downloadUrl = "download_url"
+        case checksum
     }
 }
 
