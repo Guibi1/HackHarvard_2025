@@ -6,7 +6,7 @@ import SwiftUI
 @Observable
 class ModelData {
     var searchString: String = ""
-    var serverURL: URL = URL(string: "http://10.123.237.141:8000")!
+    var serverURL: URL = URL(string: "http://10.253.72.81:8000")!
     var backend: NetworkManager = NetworkManager()
     var bluetooth: BluetoothManager = .client(
         bluetoothManager: BluetoothClientManager()

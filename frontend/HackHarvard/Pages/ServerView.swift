@@ -67,22 +67,24 @@ struct ServerView: View {
             }
 
             if let files = modelData.files {
-                Spacer()
+                if files.isEmpty == false {
+                    Spacer()
 
-                Text("Files").font(.subheadline)
-                List(files) { file in
-                    HStack(alignment: .center, spacing: 4) {
-                        Image(systemName: "lock.document")
-                        Text(file.metadata.fileName)
-                    }
-                    .contentShape(Rectangle())
-                    .swipeActions {
-                        Button(action: {
-                            modelData.deleteFile(file: file)
-                        }) {
-                            Image(systemName: "trash")
+                    Text("Files").font(.subheadline)
+                    List(files) { file in
+                        HStack(alignment: .center, spacing: 4) {
+                            Image(systemName: "lock.document")
+                            Text(file.metadata.fileName)
                         }
-                        .tint(.red)
+                        .contentShape(Rectangle())
+                        .swipeActions {
+                            Button(action: {
+                                modelData.deleteFile(file: file)
+                            }) {
+                                Image(systemName: "trash")
+                            }
+                            .tint(.red)
+                        }
                     }
                 }
             }
@@ -113,7 +115,7 @@ struct ServerView: View {
                 uploadStatus = .error
             }
         }.sheet(isPresented: $showLogs) {
-            HStack(spacing: 8) {
+            VStack(spacing: 8) {
                 Text("Logs").font(.title2)
                 if modelData.logs != nil {
                     List(modelData.logs!, id: \.self) { log in
@@ -129,7 +131,7 @@ struct ServerView: View {
                 } else {
                     Text("Loading...")
                 }
-            }
+            }.padding()
         }
     }
 
