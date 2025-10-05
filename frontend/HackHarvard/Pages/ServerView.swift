@@ -72,7 +72,7 @@ struct ServerView: View {
 
                     Text("Files").font(.subheadline)
                     List(files) { file in
-                        HStack(alignment: .center, spacing: 4) {
+                        HStack(alignment: .center, spacing: 16) {
                             Image(systemName: "lock.document")
                             Text(file.metadata.fileName)
                         }
@@ -119,7 +119,7 @@ struct ServerView: View {
                 Text("Logs").font(.title2)
                 if modelData.logs != nil {
                     List(modelData.logs!, id: \.self) { log in
-                        HStack(alignment: .center, spacing: 4) {
+                        HStack(alignment: .center, spacing: 16) {
                             Image(
                                 systemName:
                                     "clock.arrow.trianglehead.counterclockwise.rotate.90"

@@ -8,7 +8,7 @@ struct FilesView: View {
     @State var downloadingFileId: String?
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack {
             HStack {
                 Button(action: {
                     bluetoothManager.disconnect()
@@ -25,6 +25,7 @@ struct FilesView: View {
                 Spacer()
             }.padding(.horizontal)
 
+            Text("Files").font(.title2).multilineTextAlignment(.leading)
             if let files = modelData.files {
                 List(files) { file in
                     FileRow(file: file)
@@ -68,7 +69,7 @@ struct FileRow: View {
     @ObservedObject var file: AvailableFile
 
     var body: some View {
-        HStack(alignment: .center, spacing: 4) {
+        HStack(spacing: 16) {
             Image(systemName: "lock.document")
             Text(file.metadata.fileName)
 
