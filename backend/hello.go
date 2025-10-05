@@ -147,6 +147,28 @@ func main() {
 		c.FileAttachment(filePath, filename)
 	})
 
+	r.DELETE("/download/:session_id/:filename", func(c *gin.Context) {
+		sessionID := c.Param("session_id")
+		filename := c.Param("filename")
+
+		filePath := filepath.Join(uploadDir, sessionID, filename)
+		// Check if file exists
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
+			return
+		}
+
+		// Delete the file
+		if err := os.Remove(filePath); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete file"})
+			return
+		}
+
+		addLog(fmt.Sprintf("File '%s' was deleted from session '%s'", filename, sessionID))
+
+		c.JSON(http.StatusOK, gin.H{"message": "file deleted successfully"})
+	})
+
 	// ---- GET ALL META ----
 	r.GET("/get-all/:session_id", func(c *gin.Context) {
 		sessionID := c.Param("session_id")
