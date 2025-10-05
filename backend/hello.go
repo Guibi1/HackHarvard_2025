@@ -189,7 +189,6 @@ func main() {
 			return
 		}
 
-<<<<<<< HEAD
 		metaPath := filepath.Join(uploadDir, sessionID, "meta.txt")
 
 		// 1. Read the current file contents
