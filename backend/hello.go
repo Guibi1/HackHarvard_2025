@@ -2,15 +2,16 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net/http"
 	"os"
-	"errors"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
-	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -148,12 +149,12 @@ func main() {
 		addLog(fmt.Sprintf("Session '%s' uploaded file '%s' (%s, %d bytes)", sessionID, metadata.FileName, metadata.Checksum, metadata.FileSize), sessionID)
 
 		c.JSON(http.StatusOK, gin.H{
- 			"success":      true,
- 			"message":      "File uploaded successfully",
- 			"file_id":      fileID,
-    		"checksum":     metadata.Checksum,
- 			"download_url": fmt.Sprintf("http://localhost:8080/download/%s/%s", sessionID, sessionID),
-        })
+			"success":      true,
+			"message":      "File uploaded successfully",
+			"file_id":      fileID,
+			"checksum":     metadata.Checksum,
+			"download_url": fmt.Sprintf("http://localhost:8080/download/%s/%s", sessionID, sessionID),
+		})
 	})
 
 	// ---- DOWNLOAD ----
@@ -194,8 +195,8 @@ func main() {
 		// 1. Read the current file contents
 		metadata, err := os.ReadFile(metaPath)
 		if err != nil && !os.IsNotExist(err) {
-		    c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		    return
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
 		}
 
 		// 2. Remove lines starting with filename
@@ -204,18 +205,17 @@ func main() {
 		// 3. Reopen file for writing (truncate it)
 		mf, err := os.OpenFile(metaPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
-		    c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		    return
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
 		}
 		defer mf.Close()
 
 		// 4. Write cleaned content back
 		if _, err := mf.WriteString(cleaned); err != nil {
-		    c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		    return
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
 		}
 
-		addLog(fmt.Sprintf("File '%s' was deleted from session '%s'", filename, sessionID))
 		addLog(fmt.Sprintf("File '%s' was deleted from session '%s'", filename, sessionID), sessionID)
 
 		c.JSON(http.StatusOK, gin.H{"message": "file deleted successfully"})
@@ -230,7 +230,7 @@ func main() {
 		content, err := os.ReadFile(metaPath)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-		  		c.String(http.StatusOK, "")
+				c.String(http.StatusOK, "")
 				return
 			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -270,15 +270,13 @@ func main() {
 	r.Run(":8000")
 }
 
-
-
 func removeLinesStartingWith(s, prefix string) string {
-    lines := strings.Split(s, "\n")
-    var result []string
-    for _, line := range lines {
-        if !strings.HasPrefix(line, prefix) {
-            result = append(result, line)
-        }
-    }
-    return strings.Join(result, "\n")
+	lines := strings.Split(s, "\n")
+	var result []string
+	for _, line := range lines {
+		if !strings.HasPrefix(line, prefix) {
+			result = append(result, line)
+		}
+	}
+	return strings.Join(result, "\n")
 }
