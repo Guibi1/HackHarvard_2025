@@ -1,6 +1,6 @@
+import Combine
 import Foundation
 import Network
-import Combine
 
 /// A network manager for handling secure file uploads with progress tracking
 class NetworkManager: ObservableObject {
@@ -51,41 +51,48 @@ class NetworkManager: ObservableObject {
         monitor.start(queue: queue)
     }
 
-    func createSession(serverURL: URL) async throws -> String {
-        guard let url = URL(string: "/create-session", relativeTo: serverURL) else {
-            throw NetworkError.invalidURL
-        }
-
+    func createSession(serverURL: URL) async -> String {
+        let url = URL(string: "/create-session", relativeTo: serverURL)!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         do {
-                   let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(
+                for: request
+            )
 
-                   // Optional: check HTTP status code
-                   if let httpResp = response as? HTTPURLResponse,
-                      !(200...299).contains(httpResp.statusCode) {
-                       let bodyString = String(data: data, encoding: .utf8) ?? "<non-text body>"
-                       throw NSError(
-                           domain: "HTTPError",
-                           code: httpResp.statusCode,
-                           userInfo: [NSLocalizedDescriptionKey: "Status \(httpResp.statusCode): \(bodyString)"]
-                       )
-                   }
+            // Optional: check HTTP status code
+            if let httpResp = response as? HTTPURLResponse,
+                !(200...299).contains(httpResp.statusCode)
+            {
+                let bodyString =
+                    String(data: data, encoding: .utf8) ?? "<non-text body>"
+                throw NSError(
+                    domain: "HTTPError",
+                    code: httpResp.statusCode,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Status \(httpResp.statusCode): \(bodyString)"
+                    ]
+                )
+            }
 
-                   // Decode JSON
-                   let decoder = JSONDecoder()
-                   let apiResp = try decoder.decode(CreateSessionResponse.self, from: data)
+            // Decode JSON
+            let decoder = JSONDecoder()
+            let apiResp = try decoder.decode(
+                CreateSessionResponse.self,
+                from: data
+            )
 
-                   // Update UI on main thread
-                   return apiResp.session_id
-               } catch {
-                   await MainActor.run {
-                       // self.error = error.localizedDescription
-                       // self.isLoading = false
-                   }
-               }
+            // Update UI on main thread
+            return apiResp.session_id
+        } catch {
+            await MainActor.run {
+                // self.error = error.localizedDescription
+                // self.isLoading = false
+            }
+        }
 
         return "invalid-key"
     }
@@ -101,13 +108,10 @@ class NetworkManager: ObservableObject {
     func uploadEncryptedFile(
         _ encryptedFileData: EncryptedFileData,
         sessionID: String,
-        to serverURL: URL,
+        serverURL: URL,
         progressHandler: ((Double) -> Void)? = nil
     ) async throws -> UploadResponse {
-
-        guard let url = URL(string: "/upload" ,relativeTo: serverURL) else {
-            throw NetworkError.invalidURL
-        }
+        let url = URL(string: "/upload", relativeTo: serverURL)!
 
         guard networkStatus != .disconnected else {
             throw NetworkError.noNetworkConnection
@@ -128,20 +132,33 @@ class NetworkManager: ObservableObject {
         do {
             // Create multipart form data
             let boundary = UUID().uuidString
-            let httpBody = createMultipartBody(encryptedFileData, boundary: boundary, sessionID: sessionID)
+            let httpBody = createMultipartBody(
+                encryptedFileData,
+                boundary: boundary,
+                sessionID: sessionID
+            )
 
             // Create the request
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
-            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            request.setValue(
+                "multipart/form-data; boundary=\(boundary)",
+                forHTTPHeaderField: "Content-Type"
+            )
             request.setValue("application/json", forHTTPHeaderField: "Accept")
-            request.setValue("gzip, deflate", forHTTPHeaderField: "Accept-Encoding")
-            request.timeoutInterval = 300 // 5 minutes timeout
+            request.setValue(
+                "gzip, deflate",
+                forHTTPHeaderField: "Accept-Encoding"
+            )
+            request.timeoutInterval = 300  // 5 minutes timeout
 
             await updateProgress(0.2, progressHandler)
 
             // Create upload task with progress tracking
-            let (data, response) = try await URLSession.shared.upload(for: request, from: httpBody)
+            let (data, response) = try await URLSession.shared.upload(
+                for: request,
+                from: httpBody
+            )
 
             await updateProgress(0.9, progressHandler)
 
@@ -151,14 +168,21 @@ class NetworkManager: ObservableObject {
             }
 
             guard 200...299 ~= httpResponse.statusCode else {
-                let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-                throw NetworkError.serverError(httpResponse.statusCode, errorMessage)
+                let errorMessage =
+                    String(data: data, encoding: .utf8) ?? "Unknown error"
+                throw NetworkError.serverError(
+                    httpResponse.statusCode,
+                    errorMessage
+                )
             }
 
             await updateProgress(1.0, progressHandler)
 
             // Parse response
-            let uploadResponse = try JSONDecoder().decode(UploadResponse.self, from: data)
+            let uploadResponse = try JSONDecoder().decode(
+                UploadResponse.self,
+                from: data
+            )
             return uploadResponse
 
         } catch {
@@ -176,44 +200,66 @@ class NetworkManager: ObservableObject {
 
     /// Updates upload progress on main actor
     @MainActor
-    private func updateProgress(_ progress: Double, _ handler: ((Double) -> Void)?) {
+    private func updateProgress(
+        _ progress: Double,
+        _ handler: ((Double) -> Void)?
+    ) {
         uploadProgress = progress
         handler?(progress)
     }
 
     /// Creates multipart form data for file upload
-    private func createMultipartBody(_ fileData: EncryptedFileData, boundary: String, sessionID: String) -> Data {
+    private func createMultipartBody(
+        _ fileData: EncryptedFileData,
+        boundary: String,
+        sessionID: String
+    ) -> Data {
         var body = Data()
 
         // Add file metadata
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"metadata\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: application/json\r\n\r\n".data(using: .utf8)!)
+        body.append(
+            "Content-Disposition: form-data; name=\"metadata\"\r\n".data(
+                using: .utf8
+            )!
+        )
+        body.append(
+            "Content-Type: application/json\r\n\r\n".data(using: .utf8)!
+        )
 
         let metadata = FileMetadata(
             fileName: fileData.fileName,
             fileSize: fileData.fileSize,
             timestamp: fileData.timestamp,
             checksum: fileData.checksum,
-            iv: fileData.iv.data(using: .utf8)!.base64EncodedString()
+            iv: fileData.iv.base64EncodedString()
         )
 
         if let metadataJSON = try? JSONEncoder().encode(metadata),
-           let metadataString = String(data: metadataJSON, encoding: .utf8) {
+            let metadataString = String(data: metadataJSON, encoding: .utf8)
+        {
             body.append(metadataString.data(using: .utf8)!)
         }
         body.append("\r\n".data(using: .utf8)!)
 
         // Add encrypted content
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"\r\n".data(using: .utf8)!)
+        body.append(
+            "Content-Disposition: form-data; name=\"file\"\r\n".data(
+                using: .utf8
+            )!
+        )
         body.append("Content-Type: text/plain\r\n\r\n".data(using: .utf8)!)
-        body.append(fileData.encryptedContent.data(using: .utf8)!)
+        body.append(fileData.encryptedData)
         body.append("\r\n".data(using: .utf8)!)
 
         // Add IV
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"session_id\"\r\n".data(using: .utf8)!)
+        body.append(
+            "Content-Disposition: form-data; name=\"session_id\"\r\n".data(
+                using: .utf8
+            )!
+        )
         body.append("Content-Type: text/plain\r\n\r\n".data(using: .utf8)!)
         body.append(sessionID.data(using: .utf8)!)
         body.append("\r\n".data(using: .utf8)!)
@@ -228,23 +274,71 @@ class NetworkManager: ObservableObject {
     /// - Parameter url: The file URL to download
     /// - Returns: The downloaded data
     /// - Throws: NetworkError on failure
-    func downloadFile(from url: String) async throws -> Data {
-        guard let downloadURL = URL(string: url) else {
-            throw NetworkError.invalidURL
-        }
+    func downloadFile(fileId: String, sessionID: String, serverURL: URL)
+        async throws -> Data
+    {
+        let url = URL(
+            string: "/download/\(sessionID)/\(fileId)",
+            relativeTo: serverURL
+        )!
 
         guard networkStatus != .disconnected else {
             throw NetworkError.noNetworkConnection
         }
 
-        let (data, response) = try await URLSession.shared.data(from: downloadURL)
+        let (data, response) = try await URLSession.shared.data(
+            from: url
+        )
 
         guard let httpResponse = response as? HTTPURLResponse,
-              200...299 ~= httpResponse.statusCode else {
+            200...299 ~= httpResponse.statusCode
+        else {
             throw NetworkError.downloadFailed
         }
 
         return data
+    }
+
+    func listFiles(sessionID: String, serverURL: URL) async throws -> [(
+        String, FileMetadata
+    )] {
+        let url = URL(string: "/get-all/\(sessionID)", relativeTo: serverURL)!
+
+        guard networkStatus != .disconnected else {
+            throw NetworkError.noNetworkConnection
+        }
+
+        let (data, response) = try await URLSession.shared.data(
+            from: url
+        )
+
+        guard let httpResponse = response as? HTTPURLResponse,
+            200...299 ~= httpResponse.statusCode
+        else {
+            throw NetworkError.downloadFailed
+        }
+
+        let string_data = String(data: data, encoding: .utf8)!
+
+        var files: [(String, FileMetadata)] = []
+        for line in string_data.split(separator: "\n") {
+            let parts = line.split(separator: ":", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+
+            let id = parts[0].trimmingCharacters(in: .whitespaces)
+            let metaString = parts[1].trimmingCharacters(in: .whitespaces)
+
+            if let metaData = metaString.data(using: .utf8),
+                let metadata = try? JSONDecoder().decode(
+                    FileMetadata.self,
+                    from: metaData
+                )
+            {
+                files.append((id, metadata))
+            }
+        }
+
+        return files
     }
 
     /// Checks server connectivity

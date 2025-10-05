@@ -67,16 +67,3 @@ final class KeychainManager {
         return chunks
     }
 }
-extension Data {
-    func chunked(into size: Int) -> [Data] {
-        var chunks: [Data] = []
-        var index = 0
-        while index < count {
-            let length = Swift.min(size, count - index)
-            let chunk = self.subdata(in: index..<index + length)
-            chunks.append(chunk)
-            index += length
-        }
-        return chunks
-    }
-}

@@ -9,6 +9,7 @@ import (
 	"time"
 	"encoding/json"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 var (
@@ -23,7 +24,11 @@ var (
 var uploadDir = "./uploads"
 
 type FileMetadata struct {
-    fileName      string
+    Checksum  string  `json:"checksum"`
+    IV        string  `json:"iv"`
+    Timestamp float64 `json:"timestamp"`
+    FileName  string  `json:"fileName"`
+    FileSize  int     `json:"fileSize"`
 }
 
 func main() {
@@ -81,8 +86,11 @@ func main() {
 			return
 		}
 
-		// Save file inside the session folder with its original name
-		savePath := filepath.Join(sessionDir, "output.txt")
+		// Generate a unique ID for the file
+		fileID := uuid.New().String()
+
+		// Save file inside the session folder with its fileID
+		savePath := filepath.Join(sessionDir, fileID)
 		f, err := os.Create(savePath)
 		if err != nil {
    			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -91,12 +99,21 @@ func main() {
 		defer f.Close()
 		f.WriteString(file)
 
+		metaPath := filepath.Join(sessionDir, "meta.txt")
+		mf, err := os.OpenFile(metaPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		defer mf.Close()
+		mf.WriteString(fmt.Sprintf("%s: %s\n", fileID, metadata_string))
+
 		c.JSON(http.StatusOK, gin.H{
-    			"success":      true,
-    			"message":      "File uploaded successfully",
-    			"file_id":      sessionID,
-    			"download_url": fmt.Sprintf("http://localhost:8080/files/%s", metadata.fileName),
-               })
+ 			"success":      true,
+ 			"message":      "File uploaded successfully",
+ 			"file_id":      fileID,
+ 			"download_url": fmt.Sprintf("http://localhost:8080/download/%s/%s", sessionID, sessionID),
+        })
 	})
 
 	// Download endpoint
@@ -119,31 +136,20 @@ func main() {
 
 	r.GET("/get-all/:session_id", func(c *gin.Context) {
 		sessionID := c.Param("session_id")
+		sessionDir := filepath.Join(uploadDir, sessionID)
 
-		dirPath := filepath.Join(uploadDir, sessionID)
-
-		entries, err := os.ReadDir(dirPath)
+		metaPath := filepath.Join(sessionDir, "meta.txt")
+		content, err := os.ReadFile(metaPath)
 		if err != nil {
-			c.JSON(500, gin.H{"error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
-		// Extract filenames
-		var filenames []string
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				filenames = append(filenames, entry.Name())
-			}
-		}
-
-		// Return JSON array
-		c.JSON(200, gin.H{
-			"session_id": sessionID,
-			"files":      filenames,
-		})
+		fmt.Println(string(content))
+		c.String(http.StatusOK, string(content))
 	})
 
 	// Start server
-	fmt.Println("Server running on http://localhost:8080")
-	r.Run(":8080")
+	fmt.Println("Server running on http://localhost:8000")
+	r.Run(":8000")
 }

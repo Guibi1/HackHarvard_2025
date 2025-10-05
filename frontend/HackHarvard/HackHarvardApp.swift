@@ -7,15 +7,13 @@ struct HackHarvardApp: App {
 
     var body: some Scene {
         WindowGroup {
-            TabView {
-                ForEach(NavigationOptions.mainPages) { page in
-                    Tab(page.name, systemImage: page.symbolName) {
-                        page.viewForPage()
-                            .environment(modelData)
-                    }
-                }
-            }.fullScreenCover(isPresented: $modelData.isConnection) {
-                ConnectingView()
+            switch modelData.bluetooth {
+            case .client(let bluetoothManager):
+                ClientView(bluetoothManager: bluetoothManager)
+                    .environment(modelData)
+
+            case .server(let bluetoothManager):
+                ServerView(bluetoothManager: bluetoothManager)
                     .environment(modelData)
             }
         }

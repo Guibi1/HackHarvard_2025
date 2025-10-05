@@ -1,12 +1,7 @@
-//
-//  BluetoothManager.swift
-//  test
-//
-//  Created by Emil Rose Levy on 2025-10-03.
-//
-
-import CoreBluetooth
 import Combine
+import CoreBluetooth
+import SwiftUI
+import CryptoKit
 
 // A model to hold discovered device info
 struct DiscoveredDevice: Identifiable {
@@ -19,14 +14,19 @@ struct DiscoveredDevice: Identifiable {
     let connectable: Bool
 }
 
-class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDelegate {
+class BluetoothClientManager: NSObject, ObservableObject,
+    CBCentralManagerDelegate, CBPeripheralDelegate
+{
     private var centralManager: CBCentralManager?
-    @Published var devices: [DiscoveredDevice] = []
+    @Published var device: DiscoveredDevice? = nil
     @Published var isScanning: Bool = false
     @Published var connectedPeripheral: CBPeripheral?
-    
+    @Published var sessionID: String?
+    @Published var decryptionKey: SymmetricKey?
+    var onConnection: (() -> Void)?
+
     private var shouldAutoReconnect: Bool = true
-    private var characteristics: [CBUUID: CBCharacteristic] = [:] // Cache for later read/write
+    private var characteristics: [CBUUID: CBCharacteristic] = [:]  // Cache for later read/write
 
     override init() {
         super.init()
@@ -60,12 +60,16 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
             return
         }
 
-        devices.removeAll()
+        device = nil
         isScanning = true
 
         // You can temporarily use nil to see all peripherals
-        central.scanForPeripherals(withServices: [CBUUID(string: "08590F7E-DB05-467E-8757-72F6FAEB13D4")],
-                                   options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
+        central.scanForPeripherals(
+            withServices: [
+                CBUUID(string: "08590F7E-DB05-467E-8757-72F6FAEB13D4")
+            ],
+            options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
+        )
         print("🔍 Started scanning...")
 
         // Stop after 30s
@@ -80,14 +84,19 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
         print("🛑 Stopped scanning.")
     }
 
-    func centralManager(_ central: CBCentralManager,
-                        didDiscover peripheral: CBPeripheral,
-                        advertisementData: [String: Any],
-                        rssi RSSI: NSNumber) {
+    func centralManager(
+        _ central: CBCentralManager,
+        didDiscover peripheral: CBPeripheral,
+        advertisementData: [String: Any],
+        rssi RSSI: NSNumber
+    ) {
 
-        let advertisedName = advertisementData[CBAdvertisementDataLocalNameKey] as? String
+        let advertisedName =
+            advertisementData[CBAdvertisementDataLocalNameKey] as? String
         let deviceName = advertisedName ?? peripheral.name ?? "Unknown"
-        let connectable = (advertisementData[CBAdvertisementDataIsConnectable] as? Bool) ?? false
+        let connectable =
+            (advertisementData[CBAdvertisementDataIsConnectable] as? Bool)
+            ?? false
 
         let device = DiscoveredDevice(
             name: deviceName,
@@ -98,12 +107,8 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
             connectable: connectable
         )
 
-        // Update or insert the device
-        if let index = devices.firstIndex(where: { $0.identifier == peripheral.identifier }) {
-            devices[index] = device
-        } else {
-            devices.append(device)
-        }
+        connect(device: device)
+        stopScan()
 
         print("📡 Device: \(deviceName)")
         print("   UUID: \(peripheral.identifier)")
@@ -113,6 +118,7 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
 
     // MARK: - Connection & Callbacks
     func connect(device: DiscoveredDevice) {
+        self.device = device
         connectedPeripheral = device.peripheral
         connectedPeripheral?.delegate = self
         shouldAutoReconnect = true
@@ -120,13 +126,20 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
         print("🔗 Connecting to \(device.name)...")
     }
 
-    func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+    func centralManager(
+        _ central: CBCentralManager,
+        didConnect peripheral: CBPeripheral
+    ) {
         print("✅ Connected to \(peripheral.name ?? "Unknown")")
         characteristics.removeAll()
         peripheral.discoverServices(nil)
+        stopScan()
     }
 
-    func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+    func peripheral(
+        _ peripheral: CBPeripheral,
+        didDiscoverServices error: Error?
+    ) {
         if let error = error {
             print("❌ Error discovering services: \(error.localizedDescription)")
             return
@@ -139,18 +152,24 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
         }
     }
 
-    func peripheral(_ peripheral: CBPeripheral,
-                    didDiscoverCharacteristicsFor service: CBService,
-                    error: Error?) {
+    func peripheral(
+        _ peripheral: CBPeripheral,
+        didDiscoverCharacteristicsFor service: CBService,
+        error: Error?
+    ) {
         if let error = error {
-            print("❌ Error discovering characteristics: \(error.localizedDescription)")
+            print(
+                "❌ Error discovering characteristics: \(error.localizedDescription)"
+            )
             return
         }
 
         guard let chars = service.characteristics else { return }
         for characteristic in chars {
-            print("🔑 Characteristic: \(characteristic.uuid), properties: \(characteristic.properties)")
-            
+            print(
+                "🔑 Characteristic: \(characteristic.uuid), properties: \(characteristic.properties)"
+            )
+
             // Cache for later use
             characteristics[characteristic.uuid] = characteristic
 
@@ -161,35 +180,47 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
         }
     }
 
-    func peripheral(_ peripheral: CBPeripheral,
-                    didUpdateValueFor characteristic: CBCharacteristic,
-                    error: Error?) {
+    func peripheral(
+        _ peripheral: CBPeripheral,
+        didUpdateValueFor characteristic: CBCharacteristic,
+        error: Error?
+    ) {
         if let error = error {
-            print("❌ Error updating value for \(characteristic.uuid): \(error.localizedDescription)")
             return
         }
 
         guard let value = characteristic.value else {
-            print("⚠️ No value for \(characteristic.uuid)")
             return
         }
 
-        let hexString = value.map { String(format: "%02hhx", $0) }.joined(separator: " ")
-        print("📥 Value for \(characteristic.uuid): \(hexString)")
+        if characteristic.uuid
+            == CBUUID(string: "08590F7E-DB05-467E-8757-72F6FAEB13D5")
+        {
+            let keyLength = 32
 
-        // Example: Battery Level (standard characteristic)
-        if characteristic.uuid == CBUUID(string: "2A19"), let battery = value.first {
-            print("🔋 Battery Level: \(battery)%")
+            let decryptionKeyData = value.subdata(in: 0..<keyLength)
+            let sessionIDdata = value.subdata(
+                in: keyLength..<value.count
+            )
+
+            decryptionKey = SymmetricKey(data: decryptionKeyData)
+            sessionID = String(data: sessionIDdata, encoding: .utf8)
+
+            self.onConnection?()
         }
     }
 
     // MARK: - Disconnect / Reconnect
-    func centralManager(_ central: CBCentralManager,
-                        didDisconnectPeripheral peripheral: CBPeripheral,
-                        error: Error?) {
+    func centralManager(
+        _ central: CBCentralManager,
+        didDisconnectPeripheral peripheral: CBPeripheral,
+        error: Error?
+    ) {
         print("⚠️ Disconnected from \(peripheral.name ?? "Unknown")")
 
-        if shouldAutoReconnect, connectedPeripheral?.identifier == peripheral.identifier {
+        if shouldAutoReconnect,
+            connectedPeripheral?.identifier == peripheral.identifier
+        {
             print("🔄 Attempting to reconnect...")
             central.connect(peripheral, options: nil)
         } else {
@@ -206,10 +237,14 @@ class BluetoothManager: NSObject, ObservableObject, CBCentralManagerDelegate, CB
     }
 
     // MARK: - Writing
-    func write(to characteristicUUID: CBUUID,
-               value: Data,
-               type: CBCharacteristicWriteType = .withResponse) {
-        guard let peripheral = connectedPeripheral, peripheral.state == .connected else {
+    func write(
+        to characteristicUUID: CBUUID,
+        value: Data,
+        type: CBCharacteristicWriteType = .withResponse
+    ) {
+        guard let peripheral = connectedPeripheral,
+            peripheral.state == .connected
+        else {
             print("⚠️ Cannot write: peripheral not connected")
             return
         }

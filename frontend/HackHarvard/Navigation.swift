@@ -48,8 +48,8 @@ enum NavigationOptions: Equatable, Hashable, Identifiable {
     /// A view builder that the split view uses to show a view for the selected navigation option.
     @MainActor @ViewBuilder func viewForPage() -> some View {
         switch self {
-        case .files: FilesView()
-        case .upload: UploadView()
+        case .files: ContentView()
+        case .upload: ContentView()
         case .settings: ContentView()
         }
 

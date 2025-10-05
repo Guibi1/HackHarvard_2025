@@ -3,7 +3,8 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct UploadView: View {
+struct ServerView: View {
+    @Environment(ModelData.self) var modelData
     @State private var isShowingDocumentPicker = false
     @State private var selectedPDFURL: URL?
     @State private var selectedPDFName: String = ""
@@ -11,8 +12,9 @@ struct UploadView: View {
     @State private var uploadProgress: Double = 0.0
     @State private var uploadStatus: UploadStatus = .idle
     @State private var errorMessage: String = ""
-    @State private var serverURL: String = "http://localhost:8080"
     @StateObject private var networkManager = NetworkManager()
+
+    let bluetoothManager: BluetoothServerManager
 
     enum UploadStatus {
         case idle
@@ -33,7 +35,7 @@ struct UploadView: View {
                     selectFileSection
                 }
 
-                serverConfigSection
+                Text(bluetoothManager.sessionID)
 
                 if uploadStatus != .idle {
                     uploadProgressSection
@@ -143,18 +145,6 @@ struct UploadView: View {
         }
     }
 
-    private var serverConfigSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Server Configuration")
-                .font(.headline)
-
-            TextField("Server URL", text: $serverURL)
-                .textFieldStyle(.roundedBorder)
-                .disableAutocorrection(true)
-                .disabled(isUploading)
-        }
-    }
-
     private var uploadProgressSection: some View {
         VStack(spacing: 10) {
             HStack {
@@ -218,7 +208,7 @@ struct UploadView: View {
     }
 
     private var canUpload: Bool {
-        selectedPDFURL != nil && !serverURL.isEmpty && !isUploading
+        selectedPDFURL != nil && !isUploading
     }
 
     private func uploadFile() {
@@ -228,8 +218,6 @@ struct UploadView: View {
         uploadStatus = .encrypting
         uploadProgress = 0.0
         errorMessage = ""
-
-        let serverURL = URL(string: serverURL)!
 
         Task {
             do {
@@ -248,39 +236,34 @@ struct UploadView: View {
                 }
 
                 // Generate encryption key and IV
-                let (encryptedData, key, iv) = try EncryptionManager.encryptData(
-                    pdfData
-                )
+                let (encryptedData, iv) =
+                    try EncryptionManager.encryptData(
+                        pdfData,
+                        key: bluetoothManager.encryptionKey
+                    )
 
                 await MainActor.run {
                     uploadStatus = .uploading
                     uploadProgress = 0.3
                 }
 
-                // Prepare upload data
-                let sessionID = try await networkManager.createSession(
-                    serverURL: serverURL
-                )
-
                 // Upload to server
                 let encryptedFileData = EncryptedFileData(
                     fileName: selectedPDFName,
                     originalData: pdfData,
                     encryptedData: encryptedData,
-                    key: key,
                     iv: iv
                 )
 
-                let uploadResponse =
-                    try await networkManager.uploadEncryptedFile(
-                        encryptedFileData,
-                        sessionID: sessionID,
-                        to: serverURL
-                    ) { progress in
-                        Task { @MainActor in
-                            uploadProgress = 0.3 + (progress * 0.7)  // Start from 30%, progress to 100%
-                        }
+               let _ =  try await networkManager.uploadEncryptedFile(
+                    encryptedFileData,
+                    sessionID: bluetoothManager.sessionID,
+                    serverURL: modelData.serverURL
+                ) { progress in
+                    Task { @MainActor in
+                        uploadProgress = 0.3 + (progress * 0.7)  // Start from 30%, progress to 100%
                     }
+                }
 
                 await MainActor.run {
                     uploadStatus = .success
@@ -330,5 +313,10 @@ enum UploadError: LocalizedError {
 }
 
 #Preview {
-    UploadView()
+    ServerView(
+        bluetoothManager: BluetoothServerManager(
+            sessionID: "testID",
+            encryptionKey: EncryptionManager.generateEncryptionKey()
+        )
+    )
 }

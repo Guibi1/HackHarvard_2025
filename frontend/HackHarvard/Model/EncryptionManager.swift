@@ -8,24 +8,18 @@ class EncryptionManager {
     /// - Parameter data: The data to encrypt
     /// - Returns: A tuple containing the encrypted data, encryption key, and initialization vector
     /// - Throws: CryptoKitError if encryption fails
-    static func encryptData(_ data: Data) throws -> (encryptedData: Data, key: Data, iv: Data) {
-        // Generate a random 256-bit encryption key
-        let key = SymmetricKey(size: .bits256)
-
-        // Generate a random 12-byte nonce (IV) for AES-GCM
+    static func encryptData(_ data: Data, key encryptionKey: SymmetricKey) throws -> (encryptedData: Data, iv: Data) {
         let nonce = AES.GCM.Nonce()
-
-        // Encrypt the data using AES-GCM
-        let sealedBox = try AES.GCM.seal(data, using: key, nonce: nonce)
+        let sealedBox = try AES.GCM.seal(data, using: encryptionKey, nonce: nonce)
 
         // Combine ciphertext and authentication tag
         let encryptedData = sealedBox.ciphertext + sealedBox.tag
 
         // Extract key and nonce as Data
-        let keyData = key.withUnsafeBytes { Data($0) }
+        let keyData = encryptionKey.withUnsafeBytes { Data($0) }
         let ivData = Data(nonce)
         KeychainManager.shared.saveEncryptionKey(keyData, iv: ivData)
-        return (encryptedData, keyData, ivData)
+        return (encryptedData, ivData)
     }
 
     /// Decrypts data using AES-GCM
@@ -35,10 +29,7 @@ class EncryptionManager {
     ///   - ivData: The initialization vector as Data
     /// - Returns: The decrypted data
     /// - Throws: CryptoKitError if decryption fails
-    static func decryptData(_ encryptedData: Data, key keyData: Data, iv ivData: Data) throws -> Data {
-        // Recreate the symmetric key
-        let key = SymmetricKey(data: keyData)
-
+    static func decryptData(_ encryptedData: Data, key: SymmetricKey, iv ivData: Data) throws -> Data {
         // Recreate the nonce
         let nonce = try AES.GCM.Nonce(data: ivData)
 
@@ -62,10 +53,9 @@ class EncryptionManager {
     }
 
     /// Generates a secure random encryption key
-    /// - Returns: A 256-bit encryption key as Data
-    static func generateEncryptionKey() -> Data {
-        let key = SymmetricKey(size: .bits256)
-        return key.withUnsafeBytes { Data($0) }
+    /// - Returns: A 256-bit encryption key
+    static func generateEncryptionKey() -> SymmetricKey {
+        return SymmetricKey(size: .bits256)
     }
 
     /// Converts data to a base64 encoded string for transmission
@@ -114,18 +104,16 @@ enum EncryptionError: LocalizedError {
 /// Data structure for encrypted file information
 struct EncryptedFileData: Codable {
     let fileName: String
-    let encryptedContent: String // base64 encoded
-    let encryptionKey: String    // base64 encoded
-    let iv: String              // base64 encoded
+    let encryptedData: Data
+    let iv: Data
     let fileSize: Int
     let timestamp: Date
     let checksum: String        // SHA256 hash of original file
 
-    init(fileName: String, originalData: Data, encryptedData: Data, key: Data, iv: Data) {
+    init(fileName: String, originalData: Data, encryptedData: Data, iv: Data) {
         self.fileName = fileName
-        self.encryptedContent = encryptedData.base64EncodedString()
-        self.encryptionKey = key.base64EncodedString()
-        self.iv = iv.base64EncodedString()
+        self.encryptedData = encryptedData
+        self.iv = iv
         self.fileSize = originalData.count
         self.timestamp = Date()
 

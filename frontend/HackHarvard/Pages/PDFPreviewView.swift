@@ -1,5 +1,5 @@
-import SwiftUI
 import PDFKit
+import SwiftUI
 
 struct PDFPreviewView: View {
     let file: AvailableFile
@@ -10,7 +10,7 @@ struct PDFPreviewView: View {
             Group {
                 if let pdfData = file.pdfData {
                     PDFKitRepresentable(data: pdfData)
-                        .navigationTitle(file.name)
+                        .navigationTitle(file.metadata.fileName)
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar {
                             ToolbarItem(placement: .topBarTrailing) {
@@ -23,7 +23,9 @@ struct PDFPreviewView: View {
                     ContentUnavailableView(
                         "PDF Not Available",
                         systemImage: "doc.text",
-                        description: Text("The PDF data is not available for preview.")
+                        description: Text(
+                            "The PDF data is not available for preview."
+                        )
                     )
                 }
             }
@@ -60,71 +62,79 @@ struct PDFKitRepresentable: UIViewRepresentable {
 }
 
 #Preview {
-    PDFPreviewView(file: AvailableFile(
-        id: "preview",
-        name: "Sample.pdf",
-        isDownloaded: true,
-        pdfData: createSamplePDFData()
-    ))
+    PDFPreviewView(
+        file: AvailableFile(
+            id: "unique-id",
+            metadata: FileMetadata(
+                fileName: "example.pdf",
+                fileSize: 0,
+                timestamp: Date(),
+                checksum: "fileData.checksum",
+                iv: "fileData.iv.base64EncodedString()"
+            ),
+            state: .downloaded,
+            pdfData: createSamplePDFData()
+        )
+    )
 }
 
 // Helper function to create sample PDF data for preview
 private func createSamplePDFData() -> Data {
     let pdfContent = """
-    %PDF-1.4
-    1 0 obj
-    <<
-    /Type /Catalog
-    /Pages 2 0 R
-    >>
-    endobj
+        %PDF-1.4
+        1 0 obj
+        <<
+        /Type /Catalog
+        /Pages 2 0 R
+        >>
+        endobj
 
-    2 0 obj
-    <<
-    /Type /Pages
-    /Kids [3 0 R]
-    /Count 1
-    >>
-    endobj
+        2 0 obj
+        <<
+        /Type /Pages
+        /Kids [3 0 R]
+        /Count 1
+        >>
+        endobj
 
-    3 0 obj
-    <<
-    /Type /Page
-    /Parent 2 0 R
-    /MediaBox [0 0 612 792]
-    /Contents 4 0 R
-    >>
-    endobj
+        3 0 obj
+        <<
+        /Type /Page
+        /Parent 2 0 R
+        /MediaBox [0 0 612 792]
+        /Contents 4 0 R
+        >>
+        endobj
 
-    4 0 obj
-    <<
-    /Length 44
-    >>
-    stream
-    BT
-    /F1 12 Tf
-    72 720 Td
-    (Sample PDF Document) Tj
-    ET
-    endstream
-    endobj
+        4 0 obj
+        <<
+        /Length 44
+        >>
+        stream
+        BT
+        /F1 12 Tf
+        72 720 Td
+        (Sample PDF Document) Tj
+        ET
+        endstream
+        endobj
 
-    xref
-    0 5
-    0000000000 65535 f
-    0000000010 00000 n
-    0000000079 00000 n
-    0000000136 00000 n
-    0000000229 00000 n
-    trailer
-    <<
-    /Size 5
-    /Root 1 0 R
-    >>
-    startxref
-    324
-    %%EOF
-    """
+        xref
+        0 5
+        0000000000 65535 f
+        0000000010 00000 n
+        0000000079 00000 n
+        0000000136 00000 n
+        0000000229 00000 n
+        trailer
+        <<
+        /Size 5
+        /Root 1 0 R
+        >>
+        startxref
+        324
+        %%EOF
+        """
 
     return pdfContent.data(using: .utf8) ?? Data()
 }

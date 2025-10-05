@@ -1,74 +1,70 @@
-import SwiftUI
 import Foundation
+import SwiftUI
 
 struct FilesView: View {
+    @ObservedObject var bluetoothManager: BluetoothClientManager
     @Environment(ModelData.self) var modelData
     @State private var selectedFile: AvailableFile?
+    @State var downloadingFileId: String?
 
     var body: some View {
-        List(modelData.files) { file in
-            HStack {
-                Text(file.name)
-
-                Spacer()
-
-                if !file.isDownloaded {
-                    Image(systemName: "icloud.and.arrow.down")
-                }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                selectedFile = file
-            }
-        }
-        .navigationTitle("Files")
-        .refreshable {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                Task { [self] in
-                    let networkManager = NetworkManager()
-                    
-                    do {
-                        let fileData = try await networkManager.downloadFile(
-                            from: "http://172.20.10.6:8080/download/ocean/output.txt"
-                        )
-                        
-                        guard var base64String = String(data: fileData, encoding: .utf8) else {
-                            throw EncryptionError.invalidBase64String
+        if let files = modelData.files {
+            List(files) { file in
+                FileRow(file: file)
+                    .onTapGesture {
+                        if file.state == .downloaded {
+                            selectedFile = file
+                            downloadingFileId = nil
+                        } else if file.state == .inactive {
+                            Task {
+                                downloadingFileId = file.id
+                                await modelData.downloadFile(file: file)
+                                if downloadingFileId == file.id {
+                                    selectedFile = file
+                                }
+                            }
+                        } else {
+                            downloadingFileId = file.id
                         }
-                        
-                        base64String = base64String
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                            .replacingOccurrences(of: "%", with: "")
-                        
-                        let encryptedData = try EncryptionManager.decodeFromBase64(base64String)
-                        print("✅ Base64 decoded (\(encryptedData.count) bytes of encrypted data)")
-                        
-                        guard let stored = KeychainManager.shared.loadEncryptionKeyAndIV() else {
-                            throw EncryptionError.keyGenerationFailed
-                        }
-                        
-                        print("🔑 Loaded key bytes: \(stored.key.count) | IV bytes: \(stored.iv.count)")
-                        
-                        let decryptedData = try EncryptionManager.decryptData(
-                            encryptedData,
-                            key: stored.key,
-                            iv: stored.iv
-                        )
-                        print("✅ Decryption successful (\(decryptedData.count) bytes)")
-                        
-                    } catch {
-                        print("❌ Error decrypting or saving PDF: \(error.localizedDescription)")
                     }
+            }
+            .navigationTitle("Files")
+            .refreshable {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    modelData.fetchFiles()
                 }
             }
-        }
-        .sheet(item: $selectedFile) { file in
-            PDFPreviewView(file: file)
+            .sheet(item: $selectedFile) { file in
+                PDFPreviewView(file: file)
+            }
+        } else {
+            Text("Loading…")
+                .navigationTitle("Files").onAppear {
+                    modelData.fetchFiles()
+                }
         }
     }
 }
 
+struct FileRow: View {
+    @ObservedObject var file: AvailableFile
+
+    var body: some View {
+        HStack {
+            Text(file.metadata.fileName)
+            Spacer()
+            if file.state == .inactive {
+                Image(systemName: "arrow.down.circle.dotted")
+            } else if file.state == .downloading {
+                ProgressView()
+                    .progressViewStyle(.circular)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+}
+
 #Preview {
-    FilesView()
+    FilesView(bluetoothManager: BluetoothClientManager())
         .environment(ModelData())
 }
