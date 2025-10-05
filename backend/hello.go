@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
-
+	"strings"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -149,7 +149,7 @@ func main() {
 		c.FileAttachment(filePath, filename)
 	})
 
-	r.DELETE("/download/:session_id/:filename", func(c *gin.Context) {
+	r.DELETE("/file/:session_id/:filename", func(c *gin.Context) {
 		sessionID := c.Param("session_id")
 		filename := c.Param("filename")
 
@@ -164,6 +164,32 @@ func main() {
 		if err := os.Remove(filePath); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete file"})
 			return
+		}
+
+		metaPath := filepath.Join(uploadDir, sessionID, "meta.txt")
+
+		// 1. Read the current file contents
+		metadata, err := os.ReadFile(metaPath)
+		if err != nil && !os.IsNotExist(err) {
+		    c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		    return
+		}
+
+		// 2. Remove lines starting with filename
+		cleaned := removeLinesStartingWith(string(metadata), filename)
+
+		// 3. Reopen file for writing (truncate it)
+		mf, err := os.OpenFile(metaPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+		    c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		    return
+		}
+		defer mf.Close()
+
+		// 4. Write cleaned content back
+		if _, err := mf.WriteString(cleaned); err != nil {
+		    c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		    return
 		}
 
 		addLog(fmt.Sprintf("File '%s' was deleted from session '%s'", filename, sessionID))
@@ -196,10 +222,23 @@ func main() {
 		logsLock.Lock()
 		defer logsLock.Unlock()
 
-		c.JSON(http.StatusOK, logs)
+		c.String(http.StatusOK, strings.Join(logs, "\n"))
 	})
 
 	// ---- START SERVER ----
 	fmt.Println("Server running on http://localhost:8000")
 	r.Run(":8000")
+}
+
+
+
+func removeLinesStartingWith(s, prefix string) string {
+    lines := strings.Split(s, "\n")
+    var result []string
+    for _, line := range lines {
+        if !strings.HasPrefix(line, prefix) {
+            result = append(result, line)
+        }
+    }
+    return strings.Join(result, "\n")
 }
