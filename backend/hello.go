@@ -40,12 +40,35 @@ type FileMetadata struct {
 	FileSize  int     `json:"fileSize"`
 }
 
-func addLog(entry string) {
+func addLog(entry string, sessionID string) {
 	logsLock.Lock()
 	defer logsLock.Unlock()
 
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	logs = append(logs, fmt.Sprintf("[%s] %s", timestamp, entry))
+	logEntry := fmt.Sprintf("[%s] %s\n", timestamp, entry)
+
+	// Make sure the logs directory for this session exists
+	logDir := filepath.Join("logs", sessionID)
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		fmt.Printf("Error creating log directory: %v\n", err)
+		return
+	}
+
+	// Path to the write.log file
+	logFilePath := filepath.Join(logDir, "write.log")
+
+	// Open file in append mode, create if it doesn’t exist
+	f, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("Error opening log file: %v\n", err)
+		return
+	}
+	defer f.Close()
+
+	// Write log entry
+	if _, err := f.WriteString(logEntry); err != nil {
+		fmt.Printf("Error writing log: %v\n", err)
+	}
 }
 
 func main() {
@@ -67,7 +90,7 @@ func main() {
 			return
 		}
 
-		addLog(fmt.Sprintf("Created session '%s'", word))
+		addLog(fmt.Sprintf("Created session '%s'", word), word)
 
 		c.JSON(http.StatusOK, gin.H{
 			"session_id": word,
@@ -122,7 +145,7 @@ func main() {
 		defer mf.Close()
 		mf.WriteString(fmt.Sprintf("%s: %s\n", fileID, metadataString))
 
-		addLog(fmt.Sprintf("Session '%s' uploaded file '%s' (%s, %d bytes)", sessionID, metadata.FileName, metadata.Checksum, metadata.FileSize))
+		addLog(fmt.Sprintf("Session '%s' uploaded file '%s' (%s, %d bytes)", sessionID, metadata.FileName, metadata.Checksum, metadata.FileSize), sessionID)
 
 		c.JSON(http.StatusOK, gin.H{
  			"success":      true,
@@ -144,7 +167,7 @@ func main() {
 			return
 		}
 
-		addLog(fmt.Sprintf("Session '%s' downloaded file '%s'", sessionID, filename))
+		addLog(fmt.Sprintf("Session '%s' downloaded file '%s'", sessionID, filename), sessionID)
 
 		c.FileAttachment(filePath, filename)
 	})
@@ -166,6 +189,7 @@ func main() {
 			return
 		}
 
+<<<<<<< HEAD
 		metaPath := filepath.Join(uploadDir, sessionID, "meta.txt")
 
 		// 1. Read the current file contents
@@ -193,6 +217,7 @@ func main() {
 		}
 
 		addLog(fmt.Sprintf("File '%s' was deleted from session '%s'", filename, sessionID))
+		addLog(fmt.Sprintf("File '%s' was deleted from session '%s'", filename, sessionID), sessionID)
 
 		c.JSON(http.StatusOK, gin.H{"message": "file deleted successfully"})
 	})
@@ -213,16 +238,32 @@ func main() {
 			return
 		}
 
-		addLog(fmt.Sprintf("Session '%s' requested metadata listing", sessionID))
+		addLog(fmt.Sprintf("Session '%s' requested metadata listing", sessionID), sessionID)
 		c.String(http.StatusOK, string(content))
 	})
 
 	// ---- LOGS ENDPOINT ----
-	r.GET("/logs", func(c *gin.Context) {
+	r.GET("/logs/:session_id", func(c *gin.Context) {
+		sessionID := c.Param("session_id")
+
 		logsLock.Lock()
 		defer logsLock.Unlock()
 
-		c.String(http.StatusOK, strings.Join(logs, "\n"))
+		logFilePath := filepath.Join("logs", sessionID, "write.log")
+
+		// Read the file
+		data, err := os.ReadFile(logFilePath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				c.String(http.StatusOK, "") // no logs yet
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			}
+			return
+		}
+
+		// Return the raw content as a string (with \n preserved)
+		c.String(http.StatusOK, string(data))
 	})
 
 	// ---- START SERVER ----
