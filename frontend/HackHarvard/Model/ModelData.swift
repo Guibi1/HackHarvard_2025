@@ -13,6 +13,7 @@ class ModelData {
     )
 
     var files: [AvailableFile]? = nil
+    var logs: [String]? = nil
 
     init() {
         if case .client(let bluetoothManager) = self.bluetooth {
@@ -21,6 +22,24 @@ class ModelData {
             }
         }
     }
+    
+    func fetchLogs() {
+        let sessionID =
+        switch self.bluetooth {
+        case .client(let bluetoothManager):
+            bluetoothManager.sessionID
+        case .server(let bluetoothManager):
+            bluetoothManager.sessionID
+        }
+        
+        guard let sessionID = sessionID else { return }
+        
+        Task { [self] in
+            let logs = try await self.backend.downloadLogs(sessionID: sessionID, serverURL: serverURL)
+            self.logs = logs
+        }
+    }
+        
 
     func fetchFiles() {
         let sessionID =
@@ -134,6 +153,7 @@ class ModelData {
     func switchToBluetoothClient() {
         if case .client(_) = bluetooth { return }
 
+        logs = nil
         let bluetoothManager = BluetoothClientManager()
         bluetoothManager.onConnection = { [weak self] in
             self?.fetchFiles()

@@ -327,6 +327,34 @@ class NetworkManager: ObservableObject {
         return data
     }
 
+    func downloadLogs(sessionID: String, serverURL: URL)
+        async throws -> [String]
+    {
+        let url = URL(
+            string: "/logs/\(sessionID)",
+            relativeTo: serverURL
+        )!
+
+        guard networkStatus != .disconnected else {
+            throw NetworkError.noNetworkConnection
+        }
+
+        let (data, response) = try await URLSession.shared.data(
+            from: url,
+        )
+
+        guard let httpResponse = response as? HTTPURLResponse,
+            200...299 ~= httpResponse.statusCode
+        else {
+            throw NetworkError.downloadFailed
+        }
+
+        let string_data = String(data: data, encoding: .utf8)!
+        return string_data.split(separator: "\n").map {
+            String($0)
+        }
+    }
+
     func listFiles(sessionID: String, serverURL: URL) async throws -> [(
         String, FileMetadata
     )] {

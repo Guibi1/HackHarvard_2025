@@ -8,11 +8,12 @@ struct ServerView: View {
     @State private var isShowingDocumentPicker = false
     @State private var selectedPDFURL: URL?
     @State private var selectedPDFName: String = ""
-    @State private var isUploading = false
+    @State private var isUploading: Bool = false
     @State private var uploadProgress: Double = 0.0
     @State private var uploadStatus: UploadStatus = .idle
     @State private var errorMessage: String = ""
     @StateObject private var networkManager = NetworkManager()
+    @State private var showLogs: Bool = false
 
     let bluetoothManager: BluetoothServerManager
 
@@ -39,6 +40,18 @@ struct ServerView: View {
                     .glassEffect(.regular.interactive())
                 }
                 Spacer()
+                Button(action: {
+                    modelData.fetchLogs()
+                    showLogs.toggle()
+                }) {
+                    HStack {
+                        Image(systemName: "document.badge.clock")
+                    }
+                    .frame(width: 48, height: 48)
+                    .font(.system(size: 24))
+                    .foregroundColor(.blue)
+                    .glassEffect(.regular.interactive())
+                }
             }.padding(.horizontal)
 
             headerSection
@@ -98,6 +111,24 @@ struct ServerView: View {
             case .failure(let error):
                 errorMessage = error.localizedDescription
                 uploadStatus = .error
+            }
+        }.sheet(isPresented: $showLogs) {
+            HStack(spacing: 8) {
+                Text("Logs").font(.title2)
+                if modelData.logs != nil {
+                    List(modelData.logs!, id: \.self) { log in
+                        HStack(alignment: .center, spacing: 4) {
+                            Image(
+                                systemName:
+                                    "clock.arrow.trianglehead.counterclockwise.rotate.90"
+                            )
+                            Text(log)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                } else {
+                    Text("Loading...")
+                }
             }
         }
     }
