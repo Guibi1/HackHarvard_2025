@@ -205,7 +205,7 @@ class BluetoothClientManager: NSObject, ObservableObject,
 
             decryptionKey = SymmetricKey(data: decryptionKeyData)
             sessionID = String(data: sessionIDdata, encoding: .utf8)
-
+            
             self.onConnection?()
         }
     }

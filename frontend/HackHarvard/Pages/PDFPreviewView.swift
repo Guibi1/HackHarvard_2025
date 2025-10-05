@@ -29,7 +29,7 @@ struct PDFPreviewView: View {
                     )
                 }
             }
-        }
+        }.preventScreenshot()
     }
 }
 
@@ -137,4 +137,15 @@ private func createSamplePDFData() -> Data {
         """
 
     return pdfContent.data(using: .utf8) ?? Data()
+}
+
+extension View {
+
+    @ViewBuilder func preventScreenshot(_ shouldPrevent: Bool = true) -> some View {
+        if shouldPrevent {
+            ScreenshotPreventView { self }
+        } else {
+            self
+        }
+    }
 }
