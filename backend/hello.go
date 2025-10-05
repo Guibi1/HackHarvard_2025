@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"errors"
 	"path/filepath"
 	"sync"
 	"time"
@@ -124,11 +125,12 @@ func main() {
 		addLog(fmt.Sprintf("Session '%s' uploaded file '%s' (%s, %d bytes)", sessionID, metadata.FileName, metadata.Checksum, metadata.FileSize))
 
 		c.JSON(http.StatusOK, gin.H{
-			"success":      true,
-			"message":      "File uploaded successfully",
-			"file_id":      fileID,
-			"download_url": fmt.Sprintf("http://localhost:8000/download/%s/%s", sessionID, fileID),
-		})
+ 			"success":      true,
+ 			"message":      "File uploaded successfully",
+ 			"file_id":      fileID,
+    		"checksum":     metadata.Checksum,
+ 			"download_url": fmt.Sprintf("http://localhost:8080/download/%s/%s", sessionID, sessionID),
+        })
 	})
 
 	// ---- DOWNLOAD ----
@@ -177,6 +179,10 @@ func main() {
 		metaPath := filepath.Join(sessionDir, "meta.txt")
 		content, err := os.ReadFile(metaPath)
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+		  		c.String(http.StatusOK, "")
+				return
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
